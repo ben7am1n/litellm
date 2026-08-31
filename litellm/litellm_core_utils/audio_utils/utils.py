@@ -48,6 +48,11 @@ def process_audio_file(audio_file: FileTypes) -> ProcessedAudioFile:
     """
     file_content = None
     filename = None
+    provided_content_type: Final[str | None] = (
+        audio_file[2]
+        if isinstance(audio_file, tuple) and len(audio_file) >= 3 and isinstance(audio_file[2], str)
+        else None
+    )
 
     if isinstance(audio_file, (bytes, bytearray)):
         # Raw bytes
@@ -110,8 +115,8 @@ def process_audio_file(audio_file: FileTypes) -> ProcessedAudioFile:
         raise ValueError("Could not extract file content from audio_file")
 
     # Determine content type using LiteLLM's file type utilities
-    content_type = "audio/wav"  # Default fallback
-    if filename:
+    content_type = provided_content_type or "audio/wav"
+    if filename and provided_content_type is None:
         try:
             # Extract extension from filename
             extension: Final = filename.split(".")[-1].lower() if "." in filename else "wav"

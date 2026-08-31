@@ -82,6 +82,11 @@ class TestProcessAudioFile:
         assert result.filename == filename
         assert result.content_type == "audio/wav"
 
+    def test_process_tuple_input_uses_supplied_content_type(self):
+        result = process_audio_file(("recording.webm", b"fake audio data", "audio/webm"))
+
+        assert result.content_type == "audio/webm"
+
     def test_process_tuple_input_with_pathlib_content(self):
         """Tuple input with pathlib.Path content is allowed; bare str content is not."""
         from pathlib import Path

@@ -188,6 +188,16 @@ class TestTransformRequest:
             "generationConfig": {"audioTranscriptionConfig": {}},
         }
 
+    def test_request_uses_supplied_audio_webm_content_type(self, config):
+        request_data = config.transform_audio_transcription_request(
+            model="gemini-3.5-transcribe-preview",
+            audio_file=("recording.webm", AUDIO_BYTES, "audio/webm"),
+            optional_params={},
+            litellm_params={},
+        )
+
+        assert request_data.data["contents"][0]["parts"][0]["inlineData"]["mimeType"] == "audio/webm"
+
     @pytest.mark.parametrize(
         "language,expected_language_codes",
         [
