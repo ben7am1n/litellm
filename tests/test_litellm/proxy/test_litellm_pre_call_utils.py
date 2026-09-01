@@ -18,6 +18,7 @@ from litellm.proxy._types import AddTeamCallback, ProxyException, TeamCallbackMe
 from litellm.proxy.litellm_pre_call_utils import (
     KeyAndTeamLoggingSettings,
     LiteLLMProxyRequestSetup,
+    _add_otel_traceparent_to_data,
     _apply_credential_overrides_from_model_config,
     _extract_credential_from_entry,
     _get_dynamic_logging_metadata,
@@ -3461,6 +3462,31 @@ def test_trace_id_from_traceparent_valid():
         _trace_id_from_traceparent("00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01")
         == "4bf92f3577b34da6a3ce929d0e0e4736"
     )
+
+
+def test_forwarded_traceparent_uses_active_otel_span(monkeypatch):
+    pytest.importorskip("opentelemetry.sdk")
+
+    from opentelemetry.sdk.trace import TracerProvider
+
+    from litellm.proxy import proxy_server
+
+    monkeypatch.setattr(proxy_server, "open_telemetry_logger", object())
+    monkeypatch.setattr(litellm, "forward_traceparent_to_llm_provider", True)
+
+    incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+    request = SimpleNamespace(headers={"traceparent": incoming})
+    data = {}
+    tracer = TracerProvider().get_tracer(__name__)
+
+    with tracer.start_as_current_span("litellm-request") as span:
+        _add_otel_traceparent_to_data(data, request)
+
+    forwarded = data["extra_headers"]["traceparent"]
+    parts = forwarded.split("-")
+    assert parts[1] == format(span.get_span_context().trace_id, "032x")
+    assert parts[2] == format(span.get_span_context().span_id, "016x")
+    assert forwarded != incoming
 
 
 @pytest.mark.parametrize(

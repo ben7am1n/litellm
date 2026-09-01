@@ -3179,4 +3179,10 @@ def _add_otel_traceparent_to_data(data: dict, request: Request):
                     data["extra_headers"] = {}
                 _exra_headers: Final = data["extra_headers"]
                 if "traceparent" not in _exra_headers:
-                    _exra_headers["traceparent"] = request.headers["traceparent"]
+                    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+                    propagated_headers: dict[str, str] = {}  # mutable-ok: OTel propagator requires a mutable carrier
+                    TraceContextTextMapPropagator().inject(propagated_headers)
+                    _exra_headers["traceparent"] = propagated_headers.get(
+                        "traceparent", request.headers["traceparent"]
+                    )
