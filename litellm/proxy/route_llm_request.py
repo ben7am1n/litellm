@@ -477,6 +477,13 @@ async def _route_request_single_attempt(  # noqa: ANN202  # returns unawaited pr
     router_model_names: Final = llm_router.model_names if llm_router is not None else []
     is_proxy_admin_without_team: Final = team_id is None and _is_proxy_admin_request(data)
 
+    if _is_a2a_agent_model(data.get("model", "")):
+        from litellm.proxy.agent_endpoints.a2a_routing import route_a2a_agent_request
+
+        result: Final = await route_a2a_agent_request(data, route_type, user_api_key_dict=user_api_key_dict)
+        if result is not None:
+            return result
+
     # Preprocess Google GenAI generate content requests
     if route_type in ["agenerate_content", "agenerate_content_stream"]:
         # Map generationConfig to config parameter for Google GenAI compatibility
@@ -696,16 +703,6 @@ async def _route_request_single_attempt(  # noqa: ANN202  # returns unawaited pr
                 except Exception:
                     # If router fails (e.g., model not found in router), fall back to direct call
                     return getattr(litellm, f"{route_type}")(**data)
-            elif _is_a2a_agent_model(data.get("model", "")):
-                from litellm.proxy.agent_endpoints.a2a_routing import (
-                    route_a2a_agent_request,
-                )
-
-                result: Final = await route_a2a_agent_request(data, route_type, user_api_key_dict=user_api_key_dict)
-                if result is not None:
-                    return result
-                # Fall through to raise exception below if result is None
-
     elif user_model is not None or route_type == "allm_passthrough_route":
         return getattr(litellm, f"{route_type}")(**data)
 

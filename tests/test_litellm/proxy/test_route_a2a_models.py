@@ -73,6 +73,47 @@ async def test_route_a2a_model_bypasses_router():
 
 
 @pytest.mark.asyncio
+async def test_route_a2a_model_is_checked_before_recognized_router_model(monkeypatch):
+    data = {
+        "model": "a2a/restricted-agent",
+        "messages": [{"role": "user", "content": "Hello"}],
+    }
+    mock_router = _router_without_models()
+    mock_router.is_recognized_model = Mock(return_value=True)
+    from fastapi import HTTPException
+    from litellm.types.agents import AgentResponse
+
+    mock_agent = AgentResponse(
+        agent_id="restricted-agent-id",
+        agent_name="restricted-agent",
+        agent_card_params={"url": "http://agent.example.com"},
+        litellm_params=None,
+    )
+    mock_registry = Mock()
+    mock_registry.get_agent_by_id = Mock(return_value=None)
+    mock_registry.get_agent_by_name = Mock(return_value=mock_agent)
+
+    import litellm.proxy.agent_endpoints.agent_registry as agent_registry
+    from litellm.proxy.agent_endpoints.auth.agent_permission_handler import AgentRequestHandler
+
+    async def deny_agent(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(agent_registry, "global_agent_registry", mock_registry)
+    monkeypatch.setattr(AgentRequestHandler, "is_agent_allowed", staticmethod(deny_agent))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await route_request(
+            data=data,
+            llm_router=mock_router,
+            user_model=None,
+            route_type="acompletion",
+        )
+
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_route_non_a2a_model_raises_error_if_not_in_router():
     """Test that non-a2a models that aren't in router raise an error"""
 
