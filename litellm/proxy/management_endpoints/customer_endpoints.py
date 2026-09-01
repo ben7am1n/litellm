@@ -174,7 +174,7 @@ async def block_user(data: BlockUsers):
                         "update": {"blocked": True},
                     },
                 )
-                records.append(record)
+                records.append(_to_customer_response(record))
             await _evict_end_user_cache_keys(_end_user_cache_keys(data.user_ids))
         else:
             raise HTTPException(

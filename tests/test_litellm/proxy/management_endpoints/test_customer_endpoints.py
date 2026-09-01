@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 from litellm.proxy._types import (
     LiteLLM_EndUserTable,
@@ -420,6 +421,25 @@ def test_block_customer_success_serializes_through_response_model(mock_prisma_cl
     body = response.json()
     assert body["blocked_users"][0]["user_id"] == "blocked-1"
     assert body["blocked_users"][0]["blocked"] is True
+
+
+def test_block_customer_converts_prisma_row_before_response_validation(mock_prisma_client, mock_user_api_key_auth):
+    class PrismaEndUserRow(BaseModel):
+        user_id: str
+        blocked: bool
+        spend: float | None = None
+
+    blocked_row = PrismaEndUserRow(user_id="blocked-2", blocked=True)
+    mock_prisma_client.db.litellm_endusertable.upsert = AsyncMock(return_value=blocked_row)
+
+    response = client.post(
+        "/customer/block",
+        json={"user_ids": ["blocked-2"]},
+        headers={"Authorization": "Bearer test-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["blocked_users"][0]["user_id"] == "blocked-2"
 
 
 def test_delete_customer_success_serializes_through_response_model(mock_prisma_client, mock_user_api_key_auth):
