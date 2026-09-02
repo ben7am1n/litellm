@@ -137,6 +137,15 @@ def test_cache_dispatch_rejects_cluster_for_valkey_semantic():
         )
 
 
+def test_index_definition_uses_supported_redis_search_module():
+    definition = _make_cache()._index_definition()
+
+    assert definition.__class__.__module__ in {
+        "redis.commands.search.index_definition",
+        "redis.commands.search.indexDefinition",
+    }
+
+
 def test_scope_tag_is_deterministic_hex():
     tag = ValkeySemanticCache._scope_tag("model:gpt-4o::abc-123")
     assert tag == hashlib.sha256(b"model:gpt-4o::abc-123").hexdigest()
