@@ -851,6 +851,42 @@ async def test_rejected_request_does_not_consume_parallel_slot_v3():
 
 
 @pytest.mark.asyncio
+async def test_parallel_rejection_does_not_consume_rpm_quota_v3():
+    """A request rejected by max_parallel_requests must not increment RPM."""
+    local_cache = DualCache()
+    handler = _PROXY_MaxParallelRequestsHandler(
+        internal_usage_cache=InternalUsageCache(local_cache)
+    )
+    api_key = hash_token("sk-rpm-parallel")
+    user_api_key_dict = UserAPIKeyAuth(
+        api_key=api_key,
+        rpm_limit=2,
+        max_parallel_requests=1,
+    )
+    rpm_key = f"{{api_key:{api_key}}}:requests"
+
+    await handler.async_pre_call_hook(
+        user_api_key_dict=user_api_key_dict,
+        cache=local_cache,
+        data={"model": "gpt-3.5-turbo"},
+        call_type="",
+    )
+    assert await local_cache.async_get_cache(key=rpm_key) == 1
+
+    with pytest.raises(HTTPException) as exc_info:
+        await handler.async_pre_call_hook(
+            user_api_key_dict=user_api_key_dict,
+            cache=local_cache,
+            data={"model": "gpt-3.5-turbo"},
+            call_type="",
+        )
+
+    assert exc_info.value.status_code == 429
+    assert "max_parallel_requests" in exc_info.value.detail
+    assert await local_cache.async_get_cache(key=rpm_key) == 1
+
+
+@pytest.mark.asyncio
 async def test_parallel_gauge_uses_atomic_redis_script_v3():
     """
     With Redis available, gauge admission goes through the atomic

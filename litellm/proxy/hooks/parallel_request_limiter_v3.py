@@ -1260,9 +1260,9 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
 
         ``max_parallel_requests`` descriptors are enforced by the dedicated
         concurrency-gauge path (``_check_parallel_request_gauges``), never by
-        the windowed counters. The gauge phase must stay AFTER the windowed
-        check so a windowed rejection never strands an acquired slot; the
-        reverse order would leak one gauge slot per RPM/TPM rejection.
+        the windowed counters. The gauge phase runs first so a concurrency
+        rejection cannot consume RPM/TPM quota. If a later windowed check
+        rejects the request, the acquired gauge slot is released immediately.
         ``parallel_slot_id`` names the slot an admission registers; callers
         that enforce (not read_only) should pass the id they will later
         release with — when omitted, a generated slot id is used and the slot
@@ -1278,6 +1278,28 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
             skip_tpm_check=skip_tpm_check,
         )
 
+        gauge_slot_id: Final[str | None] = (parallel_slot_id or uuid.uuid4().hex) if gauges else None
+        gauge_response: RateLimitResponse | None = None
+        if gauges:
+            gauge_response = await self._check_parallel_request_gauges(
+                gauges=gauges,
+                slot_id=gauge_slot_id or "",
+                parent_otel_span=parent_otel_span,
+                read_only=read_only,
+            )
+            if gauge_response["overall_code"] == "OVER_LIMIT":
+                return gauge_response
+
+        async def release_acquired_gauge() -> None:
+            if not read_only and gauges and gauge_slot_id is not None:
+                await self._release_parallel_request_slots(
+                    acquisition=ParallelSlotAcquisition(
+                        slot_id=gauge_slot_id,
+                        counter_keys=[gauge["counter_key"] for gauge in gauges],
+                    ),
+                    parent_otel_span=parent_otel_span,
+                )
+
         windowed_response = RateLimitResponse(overall_code="OK", statuses=[])
         if keys_to_fetch:
             ## CHECK IN-MEMORY CACHE
@@ -1290,6 +1312,7 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
             if cache_values is not None:
                 rate_limit_response: Final = self.is_cache_list_over_limit(keys_to_fetch, cache_values, key_metadata)
                 if rate_limit_response["overall_code"] == "OVER_LIMIT":
+                    await release_acquired_gauge()
                     return rate_limit_response
 
             ## IF under limit in-memory, check Redis
@@ -1344,17 +1367,13 @@ class _PROXY_MaxParallelRequestsHandler_v3(CustomLogger):
 
             windowed_response = self.is_cache_list_over_limit(keys_to_fetch, cache_values, key_metadata)
             if windowed_response["overall_code"] == "OVER_LIMIT":
+                await release_acquired_gauge()
                 return windowed_response
 
         if not gauges:
             return windowed_response
 
-        gauge_response: Final = await self._check_parallel_request_gauges(
-            gauges=gauges,
-            slot_id=parallel_slot_id or uuid.uuid4().hex,
-            parent_otel_span=parent_otel_span,
-            read_only=read_only,
-        )
+        assert gauge_response is not None
         return RateLimitResponse(
             overall_code=gauge_response["overall_code"],
             statuses=[*windowed_response["statuses"], *gauge_response["statuses"]],
