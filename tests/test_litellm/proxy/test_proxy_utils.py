@@ -942,6 +942,37 @@ def test_create_model_info_response_uses_deployment_limits_when_not_in_cost_map(
     assert response["max_output_tokens"] == 8000
 
 
+def test_create_model_info_response_uses_deployment_mode_when_not_in_cost_map():
+    router = MagicMock()
+    router.get_configured_token_limits.return_value = (None, None)
+    router.get_configured_mode.return_value = "chat"
+
+    response = create_model_info_response(
+        model_id="auto-router-model",
+        provider="openai",
+        llm_router=router,
+        get_model_info=_raise_unmapped,
+    )
+
+    assert response["mode"] == "chat"
+
+
+def test_router_get_configured_mode_reads_deployment_metadata():
+    from litellm import Router
+
+    router = Router(
+        model_list=[
+            {
+                "model_name": "custom-model",
+                "litellm_params": {"model": "openai/custom-model"},
+                "model_info": {"mode": "chat"},
+            }
+        ]
+    )
+
+    assert router.get_configured_mode("custom-model") == "chat"
+
+
 def test_create_model_info_response_deployment_limits_override_cost_map():
     router = MagicMock()
     router.get_configured_token_limits.return_value = (200000, None)
