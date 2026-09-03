@@ -4383,6 +4383,7 @@ class PassThroughEndpointLoggingTypedDict(TypedDict):
 
 
 LiteLLM_ManagementEndpoint_MetadataFields: Final = [
+    "blocked",
     "model_rpm_limit",
     "model_tpm_limit",
     "model_itpm_limit",

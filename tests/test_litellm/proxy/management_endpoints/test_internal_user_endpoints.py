@@ -713,6 +713,23 @@ def test_update_internal_user_params_email():
     assert "budget_duration" not in non_default_values  # Should not add default values
 
 
+@pytest.mark.parametrize("blocked", [False, True])
+def test_update_internal_user_params_filters_blocked_from_user_table(blocked):
+    """`/user/update` must not pass the shared `blocked` field to LiteLLM_UserTable."""
+    from litellm.proxy._types import UpdateUserRequest
+    from litellm.proxy.management_endpoints.internal_user_endpoints import (
+        _update_internal_user_params,
+    )
+
+    data = UpdateUserRequest(user_id="test_user_id", blocked=blocked)
+
+    non_default_values = _update_internal_user_params(
+        data_json=data.model_dump(exclude_unset=True), data=data
+    )
+
+    assert "blocked" not in non_default_values
+
+
 def test_update_internal_user_params_reset_spend_and_max_budget():
     """
     Relevant Issue: https://github.com/BerriAI/litellm/issues/10495
