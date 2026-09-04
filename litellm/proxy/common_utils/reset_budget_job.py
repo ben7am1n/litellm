@@ -36,6 +36,7 @@ from litellm.proxy.common_utils.timezone_utils import (
     get_budget_reset_settings,
 )
 from litellm.proxy.common_utils.user_api_key_cache import (
+    end_user_cache_key,
     model_access_group_cache_key,
     model_access_group_spend_counter_key,
     tag_cache_key,
@@ -146,6 +147,14 @@ def _key_counter_key(row: _KeyRow) -> str:
 
 def _key_cache_keys(row: _KeyRow) -> tuple[str, ...]:
     return (row.token,)
+
+
+def _end_user_counter_key(row: _EndUserRow) -> str:
+    return f"spend:end_user:{row.user_id}"
+
+
+def _end_user_cache_keys(row: _EndUserRow) -> tuple[str, ...]:
+    return (end_user_cache_key(row.user_id),)
 
 
 def _org_counter_key(row: _OrgRow) -> str:
@@ -648,6 +657,7 @@ class ResetBudgetJob:
             if _rollover_enabled()
             else {}  # mutable-ok: empty sentinel immediately frozen by MappingProxyType
         )
+        endusers: Final = await self._collect_endusers_to_reset(budget_ids)
         return _BudgetCascade(
             budgets=tuple(budgets_to_reset),
             budget_ids=budget_ids,
@@ -659,13 +669,14 @@ class ResetBudgetJob:
                 for b in budgets_to_reset
                 if b.budget_id is not None and b.budget_duration is not None
             ),
-            endusers=await self._collect_endusers_to_reset(budget_ids),
+            endusers=endusers,
             counter_resets=(
                 *(
                     (_team_membership_counter_key(row), _row_carried_spend(row, rollover_caps))
                     for row in team_memberships
                 ),
                 *((_key_counter_key(row), _row_carried_spend(row, rollover_caps)) for row in keys),
+                *((_end_user_counter_key(row), _row_carried_spend(row, rollover_caps)) for row in endusers),
                 *((_org_counter_key(row), _row_carried_spend(row, rollover_caps)) for row in orgs),
                 *((_tag_counter_key(row), _row_carried_spend(row, rollover_caps)) for row in tags),
                 *(
@@ -677,6 +688,7 @@ class ResetBudgetJob:
             cache_keys=(
                 *(key for row in team_memberships for key in _team_membership_cache_keys(row)),
                 *(key for row in keys for key in _key_cache_keys(row)),
+                *(key for row in endusers for key in _end_user_cache_keys(row)),
                 *(key for row in orgs for key in _org_cache_keys(row)),
                 *(key for row in tags for key in _tag_cache_keys(row)),
                 *(key for row in model_access_groups for key in _model_access_group_cache_keys(row)),

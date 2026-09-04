@@ -379,8 +379,9 @@ def test_reset_budget_for_team(reset_budget_job, mock_prisma_client):
     assert set(write["data"].keys()) == {"spend", "budget_reset_at"}
 
 
-def test_reset_budget_for_enduser(reset_budget_job, mock_prisma_client):
+def test_reset_budget_for_enduser(reset_budget_job, mock_prisma_client, monkeypatch):
     """End-user spend is zeroed and the tier's window advances, in one batch."""
+    counter_cache = _make_counter_invalidation_job(monkeypatch)
     now = datetime.now(timezone.utc)
     test_budget = _budget_row(budget_id="test-budget-1", budget_duration="1d", budget_reset_at=now)
 
@@ -413,6 +414,8 @@ def test_reset_budget_for_enduser(reset_budget_job, mock_prisma_client):
     assert budget_writes[0]["where"] == {"budget_id": "test-budget-1"}
     assert budget_writes[0]["data"]["budget_reset_at"] > now
     assert set(budget_writes[0]["data"].keys()) == {"budget_reset_at"}
+    counter_cache.in_memory_cache.set_cache.assert_any_call(key="spend:end_user:test-enduser-1", value=0.0, ttl=60)
+    counter_cache.user_api_key_cache.async_delete_cache.assert_any_call(key="end_user_id:test-enduser-1")
 
 
 def test_reset_budget_all(reset_budget_job, mock_prisma_client):
