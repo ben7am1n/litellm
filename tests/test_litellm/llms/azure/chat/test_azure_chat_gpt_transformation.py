@@ -52,6 +52,22 @@ class TestAzureOpenAIConfig:
         supported_params = config.get_supported_openai_params("gpt-4.1")
         assert "prompt_cache_key" in supported_params
 
+    def test_service_tier_supported(self):
+        config = AzureOpenAIConfig()
+        supported_params = config.get_supported_openai_params("gpt-4.1")
+
+        assert "service_tier" in supported_params
+
+        mapped: Final = _MAPPED_PARAMS.validate_python(
+            get_optional_params(
+                model="gpt-4.1",
+                custom_llm_provider="azure",
+                service_tier="priority",
+                drop_params=True,
+            )
+        )
+        assert mapped["service_tier"] == "priority"
+
 
 def test_map_openai_params_with_preview_api_version():
     config = AzureOpenAIConfig()
