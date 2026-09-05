@@ -54,7 +54,10 @@ from litellm.proxy.common_utils.config_sync_pubsub import (
     coordination_redis_cache,
     publish_config_change,
 )
-from litellm.proxy.common_utils.encrypt_decrypt_utils import encrypt_value_helper
+from litellm.proxy.common_utils.encrypt_decrypt_utils import (
+    decrypt_value_helper,
+    encrypt_value_helper,
+)
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.management_endpoints.common_utils import _is_user_team_admin
 from litellm.proxy.management_endpoints.team_endpoints import (
@@ -85,6 +88,7 @@ from litellm.router_strategy.complexity_router import (
 )
 from litellm.router_utils.auto_router_model_naming import (
     STRATEGY_ROUTER_PARAM_FIELDS,
+    classify_strategy_router_model,
     validate_complexity_router_config_write,
     validate_strategy_router_model_write,
 )
@@ -226,6 +230,20 @@ def _strategy_router_write_violation(
     )
     if config_violation is not None:
         return config_violation
+    if incoming_params.model is None and incoming_params.complexity_router_config is not None:
+        stored_model = getattr(existing_params, "model", None)
+        if isinstance(stored_model, str):
+            stored_model = decrypt_value_helper(
+                value=stored_model,
+                key="model",
+                exception_type="debug",
+                return_original_value=True,
+            )
+            if isinstance(stored_model, str) and classify_strategy_router_model(stored_model) != "complexity":
+                return (
+                    "complexity_router_config can only be set on a deployment whose "
+                    "litellm_params.model selects the complexity router."
+                )
     if incoming_params.model is None:
         return None
     present_fields: Final = frozenset(

@@ -4000,6 +4000,21 @@ class TestStrategyRouterWriteValidation:
             is None
         )
 
+    def test_config_only_patch_rejects_non_router_stored_model(self):
+        from litellm.proxy.management_endpoints.model_management_endpoints import (
+            _strategy_router_write_violation,
+        )
+        from litellm.types.router import updateLiteLLMParams
+
+        violation = _strategy_router_write_violation(
+            incoming_params=updateLiteLLMParams(
+                complexity_router_config={"tiers": {"SIMPLE": "gpt-4o-mini"}}
+            ),
+            existing_params=LiteLLM_Params(model="openai/gpt-4o"),
+        )
+        assert violation is not None
+        assert "only be set on a deployment" in violation
+
     def test_config_only_patch_is_judged_on_the_config_alone(self):
         """The stored model is encrypted at rest, so a patch that names no model cannot be
         classified from the row. An unloadable config is rejected on its own merits instead,
