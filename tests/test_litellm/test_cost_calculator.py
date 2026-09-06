@@ -3320,16 +3320,13 @@ def test_extract_cache_creation_tokens_zero_when_missing():
 
 
 def test_custom_pricing_anthropic_style_cache_tokens_not_double_counted():
-    """
-    Anthropic providers report cache tokens at the top level of Usage, and
-    `prompt_tokens` EXCLUDES them. The helper expects `prompt_tokens` to
-    include cache tokens, so cost_per_token must adjust before invoking it —
-    otherwise regular_prompt_tokens goes negative and clamps to 0.
-    """
+    """Provider-normalized Anthropic usage must not bill cache tokens twice."""
     usage = Usage(
-        prompt_tokens=2000,
+        # AnthropicConfig.calculate_usage() includes cache tokens in
+        # prompt_tokens while preserving their separate pricing fields.
+        prompt_tokens=3800,
         completion_tokens=100,
-        total_tokens=2100,
+        total_tokens=3900,
         cache_read_input_tokens=1500,
         cache_creation_input_tokens=300,
     )
@@ -3355,8 +3352,8 @@ def test_custom_pricing_anthropic_style_cache_tokens_not_double_counted():
         },
     )
 
-    # Anthropic prompt_tokens=2000 excludes cache. After normalization the
-    # helper sees 2000 + 1500 + 300 = 3800, of which 2000 are uncached.
+    # prompt_tokens already includes 1500 cache-read and 300 cache-creation
+    # tokens, leaving 2000 regular input tokens.
     expected = 2000 * 0.000003 + 1500 * 0.0000003 + 300 * 0.00000375 + 100 * 0.000015
 
     assert cost == pytest.approx(expected)

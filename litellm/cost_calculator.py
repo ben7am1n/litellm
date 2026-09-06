@@ -197,8 +197,8 @@ def _cost_per_token_custom_pricing_helper(
     """Internal helper function for calculating cost, if custom pricing given.
 
     prompt_tokens is assumed to include both cached_tokens and cache_creation_tokens
-    (OpenAI-compatible convention). Anthropic-style usage where prompt_tokens excludes
-    cache tokens is handled at the caller (cost_per_token) before invoking this helper.
+    (OpenAI-compatible convention). Legacy Anthropic cache kwargs are normalized at
+    the caller; provider Usage objects already follow this invariant.
     """
     if custom_cost_per_token is None and custom_cost_per_second is None:
         return None
@@ -370,11 +370,8 @@ def cost_per_token(
         )
 
     ## CUSTOM PRICING ##
-    # Normalize cache token counts across providers:
-    #   - OpenAI-compatible: usage.prompt_tokens_details.cached_tokens
-    #     (prompt_tokens already INCLUDES cached_tokens)
-    #   - Anthropic: usage.cache_read_input_tokens / cache_creation_input_tokens
-    #     (prompt_tokens does NOT include these — adjust before calling helper)
+    # Normalize cache token counts across providers. Usage objects already carry
+    # cache tokens in prompt_tokens; only legacy cache kwargs need reinflation.
     _cache_read_tokens: float = 0
     _cache_creation_tokens: float = 0
     _is_anthropic_style = False
@@ -406,10 +403,10 @@ def cost_per_token(
         _cache_creation_tokens = float(cache_creation_input_tokens)
         _is_anthropic_style = True
 
-    # Anthropic reports prompt_tokens as input_tokens (excluding cache tokens).
-    # Adjust so the helper's "prompt_tokens includes cache tokens" invariant holds.
+    # Legacy Anthropic kwargs carry cache tokens outside prompt_tokens. Usage objects
+    # have already been normalized by their provider transformation.
     _normalized_prompt_tokens = float(prompt_tokens)
-    if _is_anthropic_style:
+    if usage_object is None and _is_anthropic_style:
         _normalized_prompt_tokens += _cache_read_tokens + _cache_creation_tokens
 
     response_cost: Final = _cost_per_token_custom_pricing_helper(
