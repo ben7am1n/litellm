@@ -5628,6 +5628,29 @@ async def test_probe_upstream_auth_returns_upstream_status():
 
 
 @pytest.mark.asyncio
+async def test_probe_upstream_auth_forwards_configured_extra_headers():
+    from litellm.proxy._experimental.mcp_server.server import _probe_upstream_auth
+
+    mock_response = MagicMock(status_code=200, headers={})
+    mock_client = MagicMock()
+    mock_client.post = AsyncMock(return_value=mock_response)
+
+    with patch(
+        "litellm.proxy._experimental.mcp_server.server.get_async_httpx_client",
+        return_value=mock_client,
+    ):
+        await _probe_upstream_auth(
+            "http://upstream/mcp",
+            "",
+            extra_headers={"X-Platform-Identity": "caller-123", "Authorization": "must-not-override"},
+        )
+
+    _, kwargs = mock_client.post.call_args
+    assert kwargs["headers"]["X-Platform-Identity"] == "caller-123"
+    assert "Authorization" not in kwargs["headers"]
+
+
+@pytest.mark.asyncio
 async def test_probe_upstream_auth_surfaces_httpx_status_error():
     """Probe extracts status + WWW-Authenticate from httpx.HTTPStatusError.
 
@@ -5675,6 +5698,50 @@ async def test_probe_upstream_auth_fails_open_on_network_error():
 
     assert status == 200
     assert www_auth is None
+
+
+@pytest.mark.asyncio
+async def test_true_passthrough_preflight_forwards_configured_identity_header():
+    from litellm.proxy._experimental.mcp_server import server as server_module
+
+    server = MCPServer(
+        server_id="true-passthrough-extra-header",
+        name="true-passthrough-extra-header",
+        url="http://upstream/mcp",
+        transport=MCPTransport.http,
+        auth_type=MCPAuth.true_passthrough,
+        extra_headers=["X-Platform-Identity"],
+    )
+    probe = AsyncMock(return_value=(200, None))
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/mcp/true-passthrough-extra-header",
+        "headers": [(b"x-platform-identity", b"caller-123")],
+    }
+
+    with (
+        patch.object(server_module.global_mcp_server_manager, "get_mcp_server_by_name", return_value=server),
+        patch.object(
+            server_module.global_mcp_server_manager,
+            "ensure_oauth_metadata_discovered",
+            new=AsyncMock(return_value=server),
+        ),
+        patch.object(server_module, "_probe_upstream_auth", new=probe),
+    ):
+        await server_module._raise_preemptive_401_for_unauthenticated_servers(
+            scope=scope,
+            mcp_servers=[server.name],
+            oauth2_headers=None,
+            mcp_server_auth_headers=None,
+            user_api_key_auth=UserAPIKeyAuth(api_key="sk-litellm-key"),
+            client_ip=None,
+            raw_headers={"x-platform-identity": "caller-123"},
+        )
+
+    probe.assert_awaited_once_with(
+        "http://upstream/mcp", "", extra_headers={"X-Platform-Identity": "caller-123"}
+    )
 
 
 def test_get_forwarded_auth_from_scope_extracts_header():

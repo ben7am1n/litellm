@@ -3936,7 +3936,19 @@ if MCP_AVAILABLE:
                             )
                         },
                     )
-                upstream_status, upstream_www_authenticate = await _probe_upstream_auth(server.url or "", "")
+                probe_extra_headers: dict[str, str] = {}
+                if server.extra_headers and raw_headers:
+                    normalized_raw_headers: Final = {key.lower(): value for key, value in raw_headers.items()}
+                    probe_extra_headers = {
+                        header: normalized_raw_headers[header.lower()]
+                        for header in server.extra_headers
+                        if isinstance(header, str)
+                        and header.lower() != "authorization"
+                        and header.lower() in normalized_raw_headers
+                    }
+                upstream_status, upstream_www_authenticate = await _probe_upstream_auth(
+                    server.url or "", "", extra_headers=probe_extra_headers or None
+                )
                 if upstream_status == 401 and upstream_www_authenticate:
                     raise HTTPException(
                         status_code=401,
@@ -3990,6 +4002,7 @@ if MCP_AVAILABLE:
         url: str,
         auth_header: str,
         timeout: float = 5.0,
+        extra_headers: Mapping[str, str] | None = None,
     ) -> tuple[int, str | None]:
         """JSON-RPC initialize-probe the upstream URL to check whether the token is accepted.
 
@@ -4022,6 +4035,11 @@ if MCP_AVAILABLE:
         probe_headers: Final = {
             "Accept": "application/json, text/event-stream",
             **({"Authorization": auth_header} if auth_header else {}),
+            **{
+                key: value
+                for key, value in (extra_headers or {}).items()
+                if key.lower() != "authorization"
+            },
         }
         try:
             resp: Final = await client.post(
