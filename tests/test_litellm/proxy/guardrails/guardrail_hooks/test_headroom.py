@@ -2083,7 +2083,12 @@ async def test_pre_call_deployment_hook_converts_stream_only_for_ccr_chat_comple
     tools: Optional[list],
     expect_conversion: bool,
 ):
-    kwargs = {"model": "gpt-4o", "stream": stream, "tools": tools}
+    kwargs = {
+        "model": "gpt-4o",
+        "stream": stream,
+        "stream_options": {"include_usage": True},
+        "tools": tools,
+    }
 
     result = await guardrail.async_pre_call_deployment_hook(kwargs=kwargs, call_type=call_type)
 
@@ -2091,11 +2096,13 @@ async def test_pre_call_deployment_hook_converts_stream_only_for_ccr_chat_comple
         assert result is kwargs
         assert HEADROOM_CONVERTED_STREAM_KEY not in kwargs
         assert kwargs["stream"] is stream
+        assert kwargs["stream_options"] == {"include_usage": True}
         return
 
     assert result is not None
     assert result["stream"] is False
     assert result[HEADROOM_CONVERTED_STREAM_KEY] is True
+    assert "stream_options" not in result
     assert kwargs["stream"] is True
 
 
