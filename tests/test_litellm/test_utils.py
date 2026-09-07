@@ -2843,6 +2843,21 @@ def test_model_info_for_openrouter_kimi_k2_5():
     print("openrouter kimi-k2.5 model info", model_info)
 
 
+def test_model_info_for_openrouter_gpt_5_6_sol():
+    model_info = litellm.get_model_info(model="openrouter/openai/gpt-5.6-sol")
+
+    assert model_info["litellm_provider"] == "openrouter"
+    assert model_info["mode"] == "chat"
+    assert model_info["max_input_tokens"] == 1050000
+    assert model_info["max_output_tokens"] == 128000
+    assert model_info["input_cost_per_token"] == 2e-06
+    assert model_info["output_cost_per_token"] == 1e-05
+    assert model_info["cache_read_input_token_cost"] == 2e-07
+    assert model_info["cache_creation_input_token_cost"] == 2.5e-06
+    assert model_info["supports_vision"] is True
+    assert model_info["supports_function_calling"] is True
+
+
 def test_gemini_embedding_2_ga_in_cost_map():
     """GA and Vertex preview gemini-embedding-2 entries align with multimodal unit pricing."""
     import json
