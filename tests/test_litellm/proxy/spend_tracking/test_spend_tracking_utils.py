@@ -81,6 +81,49 @@ def test_get_logging_payload_maps_openai_cached_tokens_to_cache_read_input_token
     assert additional_usage_values["prompt_tokens_details"]["cached_tokens"] == 123
 
 
+def test_get_logging_payload_falls_back_to_cost_breakdown_when_response_cost_is_zero():
+    now = datetime.datetime.now(timezone.utc)
+    standard_logging_payload = _make_standard_logging_payload_with_usage_object({})
+    standard_logging_payload["cost_breakdown"] = {"total_cost": 0.42}
+    payload = get_logging_payload(
+        kwargs={
+            "model": "azure_ai/gpt-4o",
+            "call_type": "acompletion",
+            "response_cost": 0.0,
+            "litellm_params": {"metadata": {"user_api_key": "test-key"}},
+            "standard_logging_object": standard_logging_payload,
+        },
+        response_obj={
+            "id": "chatcmpl-cost-breakdown-fallback",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+        start_time=now,
+        end_time=now,
+    )
+
+    assert payload["spend"] == pytest.approx(0.42)
+
+
+def test_get_logging_payload_prefers_nonzero_response_cost_over_cost_breakdown():
+    now = datetime.datetime.now(timezone.utc)
+    standard_logging_payload = _make_standard_logging_payload_with_usage_object({})
+    standard_logging_payload["cost_breakdown"] = {"total_cost": 0.42}
+    payload = get_logging_payload(
+        kwargs={
+            "model": "azure_ai/gpt-4o",
+            "call_type": "acompletion",
+            "response_cost": 0.17,
+            "litellm_params": {"metadata": {"user_api_key": "test-key"}},
+            "standard_logging_object": standard_logging_payload,
+        },
+        response_obj={"id": "chatcmpl-cost-precedence", "usage": {}},
+        start_time=now,
+        end_time=now,
+    )
+
+    assert payload["spend"] == pytest.approx(0.17)
+
+
 _TRACE_ONLY_STANDARD_LOGGING: Final = cast(
     StandardLoggingPayload,
     {

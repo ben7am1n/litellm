@@ -549,6 +549,7 @@ def get_logging_payload(kwargs, response_obj, start_time, end_time) -> SpendLogs
 
     # Extract agent_id for A2A requests (set directly on model_call_details)
     agent_id: Final[str | None] = kwargs.get("agent_id") or metadata.get("agent_id")
+    spend: Final = kwargs.get("response_cost") or (clean_metadata.get("cost_breakdown") or {}).get("total_cost") or 0
 
     try:
         payload: Final[SpendLogsPayload] = SpendLogsPayload(
@@ -565,7 +566,7 @@ def get_logging_payload(kwargs, response_obj, start_time, end_time) -> SpendLogs
             organization_id=metadata.get("user_api_key_org_id") or "",
             metadata=safe_dumps(clean_metadata),
             cache_key=cache_key,
-            spend=kwargs.get("response_cost", 0),
+            spend=spend,
             total_tokens=usage.get("total_tokens", standard_logging_total_tokens),
             prompt_tokens=usage.get("prompt_tokens", standard_logging_prompt_tokens),
             completion_tokens=usage.get("completion_tokens", standard_logging_completion_tokens),

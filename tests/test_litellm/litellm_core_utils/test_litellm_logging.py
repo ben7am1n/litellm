@@ -2167,6 +2167,15 @@ def test_response_cost_calculator_with_response_cost_in_hidden_params(logging_ob
     assert response_cost > 100
 
 
+def test_response_cost_calculator_recalculates_zero_hidden_response_cost(logging_obj, monkeypatch):
+    response = ModelResponse(id="chatcmpl-zero-hidden-cost", choices=[])
+    response._hidden_params = {"response_cost": 0.0}
+    monkeypatch.setattr(logging_obj, "optional_params", {}, raising=False)
+    monkeypatch.setattr(litellm, "response_cost_calculator", lambda **kwargs: 0.42)
+
+    assert logging_obj._response_cost_calculator(result=response) == pytest.approx(0.42)
+
+
 def test_response_cost_calculator_native_generate_content_body_uses_usage_metadata():
     """
     Regression for LIT-4076: a native Google :generateContent body reports tokens
