@@ -3938,12 +3938,11 @@ if MCP_AVAILABLE:
                     )
                 probe_extra_headers: dict[str, str] = {}
                 if server.extra_headers and raw_headers:
-                    normalized_raw_headers: Final = {key.lower(): value for key, value in raw_headers.items()}
+                    normalized_raw_headers = {key.lower(): value for key, value in raw_headers.items()}
                     probe_extra_headers = {
                         header: normalized_raw_headers[header.lower()]
                         for header in server.extra_headers
-                        if isinstance(header, str)
-                        and header.lower() != "authorization"
+                        if header.lower() != "authorization"
                         and header.lower() in normalized_raw_headers
                     }
                 upstream_status, upstream_www_authenticate = await _probe_upstream_auth(
