@@ -72,6 +72,18 @@ def test_in_memory_cache_max_size_per_item():
     assert result is False
 
 
+def test_in_memory_cache_max_size_per_item_checks_nested_values():
+    in_memory_cache = InMemoryCache(max_size_per_item=10)
+    oversized_value = {"response": "x" * (20 * 1024)}
+    small_value = {"response": "x" * (5 * 1024)}
+
+    assert in_memory_cache.check_value_size(oversized_value) is False
+    assert in_memory_cache.check_value_size(small_value) is True
+
+    in_memory_cache.set_cache(key="oversized", value=oversized_value)
+    assert "oversized" not in in_memory_cache.cache_dict
+
+
 def test_in_memory_cache_ttl():
     """
     Check that
