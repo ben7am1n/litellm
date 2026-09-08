@@ -235,6 +235,24 @@ def test_exact_cache_key_still_includes_prompt():
     assert key_a != key_b
 
 
+def test_exact_cache_key_is_independent_of_kwarg_order():
+    cache = Cache(type=LiteLLMCacheType.LOCAL)
+    request_kwargs = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": "same request"}],
+        "temperature": 0,
+    }
+    reordered_kwargs = {
+        "temperature": 0,
+        "messages": [{"role": "user", "content": "same request"}],
+        "model": "gpt-4o-mini",
+    }
+
+    assert cache.get_cache_key(**request_kwargs) == cache.get_cache_key(
+        **reordered_kwargs
+    )
+
+
 @pytest.mark.parametrize(
     "anthropic_param",
     [
