@@ -1856,6 +1856,19 @@ def test_parse_tool_call_arguments_malformed_json():
     assert "Unterminated string" in error_msg
 
 
+def test_parse_tool_call_arguments_recovers_concatenated_objects():
+    """Concatenated argument objects should not become an empty tool call."""
+    from litellm.litellm_core_utils.prompt_templates.common_utils import (
+        parse_tool_call_arguments,
+    )
+
+    raw = '{"args": "{\\"flag\\": true}"}{"args": "{\\"box\\": \\"A\\", \\"limit\\": 50}"}'
+
+    assert parse_tool_call_arguments(raw, tool_name="demo_tool", context="chat completions") == {
+        "args": '{"flag": true}'
+    }
+
+
 def test_convert_to_anthropic_tool_invoke_malformed_json():
     """
     Test that convert_to_anthropic_tool_invoke raises ValueError with context

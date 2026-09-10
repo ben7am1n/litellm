@@ -1851,6 +1851,16 @@ def parse_tool_call_arguments(
             )
             return repaired
 
+        recovered_objects: Final = split_concatenated_json_objects(arguments)
+        if recovered_objects:
+            verbose_logger.warning(
+                "Recovered %d concatenated tool call argument object(s) for tool '%s' (%s); using the first object",
+                len(recovered_objects),
+                tool_name or "<unknown>",
+                context or "unknown context",
+            )
+            return recovered_objects[0]
+
         error_parts: Final = ["Failed to parse tool call arguments"]
 
         if tool_name:
