@@ -2666,6 +2666,20 @@ def test_reasoning_effort_maps_to_thinking_level_gemini_3():
     assert result["thinkingConfig"]["includeThoughts"] is False
 
 
+def test_invalid_reasoning_effort_raises_bad_request():
+    """Invalid Gemini reasoning efforts should be reported as client errors."""
+    mappers = (
+        (VertexGeminiConfig._map_reasoning_effort_to_thinking_budget, "gemini-2.5-flash"),
+        (VertexGeminiConfig._map_reasoning_effort_to_thinking_level, "gemini-3-flash"),
+    )
+
+    for mapper, model in mappers:
+        with pytest.raises(litellm.UnsupportedParamsError, match="Supported values") as exc_info:
+            mapper(reasoning_effort="invalid", model=model)
+
+        assert exc_info.value.status_code == 400
+
+
 def test_reasoning_effort_dict_format_gemini_3():
     """
     Test that reasoning_effort works when passed as dict format from OpenAI Agents SDK.
