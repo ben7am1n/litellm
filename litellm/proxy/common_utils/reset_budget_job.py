@@ -571,8 +571,11 @@ class ResetBudgetJob:
             uow.keys.queue_spend_zero(where=_budget_link_where(cascade.budget_ids, _LINKED_KEYS_WHERE))
             uow.organizations.queue_spend_zero(where=_budget_link_where(cascade.budget_ids, _SPENT_ROWS_WHERE))
             uow.tags.queue_spend_zero(where=_budget_link_where(cascade.budget_ids, _SPENT_ROWS_WHERE))
-            if enduser_ids:
-                uow.endusers.queue_spend_zero(where={"user_id": {"in": list(enduser_ids)}})
+            for enduser_id_chunk in (
+                enduser_ids[index : index + RESET_BUDGET_JOB_BATCH_SIZE]
+                for index in range(0, len(enduser_ids), RESET_BUDGET_JOB_BATCH_SIZE)
+            ):
+                uow.endusers.queue_spend_zero(where={"user_id": {"in": list(enduser_id_chunk)}})
             for budget_id, budget_reset_at in cascade.budget_resets:
                 uow.budgets.queue_window_advance(budget_id=budget_id, budget_reset_at=budget_reset_at)
 

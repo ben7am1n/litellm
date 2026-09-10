@@ -1478,6 +1478,31 @@ def test_budget_cascade_writes_land_in_a_single_transaction(reset_budget_job, mo
     assert budget_write["data"]["budget_reset_at"] > now
 
 
+def test_budget_cascade_chunks_enduser_ids_within_one_transaction(
+    reset_budget_job, mock_prisma_client, monkeypatch
+):
+    """Large end-user populations use bounded IN lists without splitting the cascade transaction."""
+    _make_counter_invalidation_job(monkeypatch)
+    monkeypatch.setattr(reset_budget_job_module, "RESET_BUDGET_JOB_BATCH_SIZE", 2)
+    budget = _budget_row(budget_id="budget-1", budget_duration="7d")
+    mock_prisma_client.data["budget"] = [budget]
+    mock_prisma_client.data["enduser"] = [
+        type("EndUser", (), {"spend": 5.0, "litellm_budget_table": budget, "user_id": user_id})
+        for user_id in ("enduser-1", "enduser-2", "enduser-3", "enduser-4", "enduser-5")
+    ]
+
+    asyncio.run(reset_budget_job.reset_budget_for_litellm_budget_table())
+
+    enduser_writes = _batch_writes(mock_prisma_client, "enduser", op="update_many")
+    assert [write["where"]["user_id"]["in"] for write in enduser_writes] == [
+        ["enduser-1", "enduser-2"],
+        ["enduser-3", "enduser-4"],
+        ["enduser-5"],
+    ]
+    assert len(mock_prisma_client.db.batchers) == 1
+    assert mock_prisma_client.db.batchers[0].committed is True
+
+
 def test_caches_are_invalidated_only_after_the_transaction_commits(monkeypatch):
     """A counter zeroed before the write lands would admit requests past the
     cap while the DB still holds the over-budget spend."""
