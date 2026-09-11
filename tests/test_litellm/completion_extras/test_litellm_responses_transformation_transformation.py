@@ -2,7 +2,6 @@
 Test for response_format to text.format conversion in completion -> responses bridge
 """
 
-import pytest
 from litellm.completion_extras.litellm_responses_transformation.transformation import (
     LiteLLMResponsesTransformationHandler,
 )
@@ -258,3 +257,49 @@ def test_translate_responses_chunk_passthrough_chat_completion_chunk():
     assert result.choices[0].delta.content == "Hi! How can I help?"
     assert result.choices[0].finish_reason is None
 
+
+def test_translate_responses_raw_reasoning_text_delta():
+    from litellm.completion_extras.litellm_responses_transformation.transformation import (
+        OpenAiResponsesToChatCompletionStreamIterator,
+    )
+
+    result = OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream(
+        {
+            "type": "response.reasoning_text.delta",
+            "delta": "Inspecting the request",
+            "output_index": 0,
+        }
+    )
+
+    assert result.choices[0].delta.reasoning_content == "Inspecting the request"
+
+
+def test_convert_response_output_preserves_raw_reasoning_content():
+    from openai.types.responses import ResponseOutputMessage, ResponseOutputText, ResponseReasoningItem
+
+    reasoning = ResponseReasoningItem.model_construct(
+        id="rs_raw",
+        type="reasoning",
+        summary=[],
+        content=[{"type": "reasoning_text", "text": "Inspecting the request"}],
+    )
+    message = ResponseOutputMessage.model_construct(
+        id="msg_answer",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[ResponseOutputText(type="output_text", text="answer", annotations=[])],
+    )
+
+    choices = LiteLLMResponsesTransformationHandler._convert_response_output_to_choices([reasoning, message])
+
+    assert choices[0].message.reasoning_content == "Inspecting the request"
+    assert choices[0].message.reasoning_items == [
+        {
+            "id": "rs_raw",
+            "type": "reasoning",
+            "encrypted_content": None,
+            "summary": [],
+            "content": [{"type": "reasoning_text", "text": "Inspecting the request"}],
+        }
+    ]

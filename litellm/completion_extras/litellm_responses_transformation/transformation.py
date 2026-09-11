@@ -17,6 +17,7 @@ from openai.types.responses.tool_choice_custom_param import ToolChoiceCustomPara
 from openai.types.responses.tool_choice_function_param import ToolChoiceFunctionParam
 from openai.types.responses.tool_param import FunctionToolParam
 from pydantic import BaseModel
+from typing_extensions import NotRequired
 
 import litellm
 from litellm import ModelResponse
@@ -79,6 +80,7 @@ class _BuiltReasoningItem(TypedDict):
     id: str
     encrypted_content: str | None
     summary: Sequence[_ReasoningSummaryText]
+    content: NotRequired[Sequence[_ReasoningSummaryText]]
 
 
 def _get_reasoning_items(
@@ -111,6 +113,7 @@ def _build_reasoning_item(
     item_id: str,
     encrypted_content: str | None,
     summary_raw: Iterable[object] | None,
+    content_raw: Iterable[object] | None = None,
 ) -> _BuiltReasoningItem:
     """Build a ChatCompletionReasoningItem-shaped dict from raw response data.
 
@@ -127,12 +130,32 @@ def _build_reasoning_item(
                     "text": getattr(s, "text", ""),
                 }
             )
-    return {
+    reasoning_item: _BuiltReasoningItem = {
         "id": item_id,
         "type": "reasoning",
         "encrypted_content": encrypted_content,
         "summary": summary,
     }
+    content: Final[list[_ReasoningSummaryText]] = []
+    for block in content_raw or []:
+        if isinstance(block, dict):
+            block_type = block.get("type", "reasoning_text")
+            text = block.get("text", "")
+        else:
+            block_type = getattr(block, "type", "reasoning_text")
+            text = getattr(block, "text", "")
+        if isinstance(text, str) and text:
+            content.append({"type": str(block_type), "text": text})
+    if content:
+        reasoning_item["content"] = content
+    return reasoning_item
+
+
+def _reasoning_text_from_item(item: _BuiltReasoningItem) -> str:
+    content: Final = item.get("content")
+    if content:
+        return " ".join(block["text"] for block in content if block.get("text"))
+    return " ".join(block["text"] for block in item["summary"] if block.get("text"))
 
 
 def _reasoning_item_from_output_item(item: object) -> _BuiltReasoningItem | None:
@@ -143,12 +166,14 @@ def _reasoning_item_from_output_item(item: object) -> _BuiltReasoningItem | None
             item_id=item.id,
             encrypted_content=getattr(item, "encrypted_content", None),
             summary_raw=item.summary,
+            content_raw=getattr(item, "content", None),
         )
     if isinstance(item, dict) and item.get("type") == "reasoning":
         return _build_reasoning_item(
             item_id=item.get("id", ""),
             encrypted_content=item.get("encrypted_content"),
             summary_raw=item.get("summary"),
+            content_raw=item.get("content"),
         )
     return None
 
@@ -653,8 +678,9 @@ class LiteLLMResponsesTransformationHandler(CompletionTransformationBridge):
                     item_id=item.id,
                     encrypted_content=getattr(item, "encrypted_content", None),
                     summary_raw=item.summary,
+                    content_raw=getattr(item, "content", None),
                 )
-                reasoning_content = " ".join(s["text"] for s in pending_reasoning_item["summary"] if s.get("text"))
+                reasoning_content = _reasoning_text_from_item(pending_reasoning_item)
 
             elif isinstance(item, ResponseOutputMessage):
                 for content in item.content:
@@ -758,12 +784,7 @@ class LiteLLMResponsesTransformationHandler(CompletionTransformationBridge):
         from litellm.types.utils import Choices, Message
 
         reasoning_items: Final = _reasoning_items_from_output_items(output_items)
-        reasoning_content: Final = " ".join(
-            summary_block["text"]
-            for reasoning_item in reasoning_items
-            for summary_block in reasoning_item["summary"]
-            if summary_block.get("text")
-        )
+        reasoning_content: Final = " ".join(_reasoning_text_from_item(item) for item in reasoning_items).strip()
         message: Final = Message(
             content="",
             reasoning_content=reasoning_content if reasoning_content else None,
@@ -1498,13 +1519,16 @@ class OpenAiResponsesToChatCompletionStreamIterator(BaseModelResponseIterator):
                 )
             else:
                 raise ValueError(f"Chat provider: Invalid text delta {parsed_chunk}")
-        elif event_type == "response.reasoning_summary_text.delta":
+        elif event_type in (
+            "response.reasoning_text.delta",
+            "response.reasoning_summary_text.delta",
+        ):
             content_part = parsed_chunk.get("delta", None)
             if content_part:
                 return ModelResponseStream(
                     choices=[
                         StreamingChoices(
-                            index=cast(int, parsed_chunk.get("summary_index")),
+                            index=cast(int, parsed_chunk.get("output_index", parsed_chunk.get("summary_index", 0))),
                             delta=Delta(reasoning_content=content_part),
                         )
                     ]
