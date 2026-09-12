@@ -113,7 +113,11 @@ RUN echo "https://packages.wolfi.dev/os" >> /etc/apk/repositories
 RUN apk add --no-cache bash openssl tzdata nodejs python-3.13 libsndfile
 
 WORKDIR /app
-ENV PATH="/app/.venv/bin:${PATH}" \
+ENV HOME=/home/nonroot \
+    PATH="/app/.venv/bin:${PATH}" \
+    PYTHONPATH="/app" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
     PRISMA_BINARY_CACHE_DIR=/opt/prisma/binaries \
     PRISMA_CLI_PATH=/opt/prisma/binaries/node_modules/.bin/prisma \
     PRISMA_CLI_QUERY_ENGINE_TYPE=binary \
@@ -123,15 +127,15 @@ ENV PATH="/app/.venv/bin:${PATH}" \
 # the rest of the builder's /app is source and build metadata that must not
 # ship (manifest-scanning tools attribute everything in it to this image).
 # entrypoint.sh invokes litellm/proxy/prisma_migration.py by source path.
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/docker /app/docker
-COPY --from=builder /app/schema.prisma /app/schema.prisma
-COPY --from=builder /app/litellm/proxy/prisma_migration.py /app/litellm/proxy/prisma_migration.py
+COPY --from=builder --chown=nonroot:nonroot /app/.venv /app/.venv
+COPY --from=builder --chown=nonroot:nonroot /app/docker /app/docker
+COPY --from=builder --chown=nonroot:nonroot /app/schema.prisma /app/schema.prisma
+COPY --from=builder --chown=nonroot:nonroot /app/litellm/proxy/prisma_migration.py /app/litellm/proxy/prisma_migration.py
 # enterprise/ is imported by source path at runtime (proxy_cli puts the
 # working directory on sys.path; litellm/proxy/hooks resolves
 # enterprise.enterprise_hooks from it)
-COPY --from=builder /app/enterprise /app/enterprise
-COPY --from=builder /app/litellm-proxy-extras /app/litellm-proxy-extras
+COPY --from=builder --chown=nonroot:nonroot /app/enterprise /app/enterprise
+COPY --from=builder --chown=nonroot:nonroot /app/litellm-proxy-extras /app/litellm-proxy-extras
 # Prisma CLI + engines are baked under /opt/prisma, a fixed path every
 # runtime uid can read and that no cache volume mount shadows. The paths are
 # pinned via PRISMA_BINARY_CACHE_DIR / PRISMA_CLI_PATH and recorded into the
@@ -147,6 +151,8 @@ RUN find /app/.venv -type f -path "*/tornado/test/*" -delete && \
     python -c "from prisma.client import BINARY_PATHS; paths = list(BINARY_PATHS.query_engine.values()); assert paths and all(p.startswith('/opt/prisma/') for p in paths), paths"
 
 EXPOSE 4000/tcp
+
+USER nonroot
 
 ENTRYPOINT ["docker/prod_entrypoint.sh"]
 CMD ["--port", "4000"]

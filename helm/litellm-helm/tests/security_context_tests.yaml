@@ -1,0 +1,22 @@
+suite: default security context
+templates:
+  - deployment.yaml
+tests:
+  - it: runs the proxy with the official non-root image defaults
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL

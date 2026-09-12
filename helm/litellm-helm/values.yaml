@@ -56,17 +56,21 @@ topologySpreadConstraints:
   #     matchLabels:
   #       app: litellm
 
-# At the time of writing, the litellm docker image requires write access to the
-#  filesystem on startup so that prisma can install some dependencies.
-podSecurityContext: {}
+# The official image runs as Wolfi's unprivileged `nonroot` user (UID/GID
+# 65532). Keep the root filesystem writable for the proxy's runtime caches;
+# operators can set readOnlyRootFilesystem and provide explicit writable
+# mounts when their deployment is ready for that stronger policy.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
 securityContext:
-  {}
-  # capabilities:
-  #   drop:
-  #     - ALL
-  # readOnlyRootFilesystem: false
-  # runAsNonRoot: true
-  # runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
 
 # A list of Kubernetes Secret objects that will be exported to the LiteLLM proxy
 #  pod as environment variables.  These secrets can then be referenced in the

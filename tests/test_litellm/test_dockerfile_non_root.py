@@ -21,6 +21,7 @@ DOCKERFILE_PATH = os.path.join(
     "docker",
     "Dockerfile.non_root",
 )
+ROOT_DOCKERFILE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "Dockerfile")
 
 
 def _final_user_directive(dockerfile_text: str) -> str:
@@ -52,3 +53,12 @@ def test_final_user_directive_is_numeric():
         f"Dockerfile.non_root final USER is {final_user} (root); the non_root image "
         "must run as a non-zero UID."
     )
+
+
+def test_monolithic_runtime_uses_the_nonroot_account():
+    """The default runtime image must not launch the proxy as UID 0."""
+    with open(ROOT_DOCKERFILE_PATH, "r", encoding="utf-8") as f:
+        contents = f.read()
+
+    assert _final_user_directive(contents) == "nonroot"
+    assert "--chown=nonroot:nonroot /app/.venv /app/.venv" in contents
