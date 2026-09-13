@@ -962,6 +962,23 @@ class Logging(LiteLLMLoggingBaseClass):
             dynamic_callback_params=self.standard_callback_dynamic_params,
         )
 
+        if isinstance(custom_logger, AnthropicCacheControlHook):
+            vector_store_custom_logger: Final = self._get_vector_store_pre_call_hook()
+            if vector_store_custom_logger is not None:
+                model, messages, non_default_params = await vector_store_custom_logger.async_get_chat_completion_prompt(
+                    model=model,
+                    messages=messages,
+                    non_default_params=non_default_params or {},
+                    prompt_id=prompt_id,
+                    prompt_spec=prompt_spec,
+                    prompt_variables=prompt_variables,
+                    dynamic_callback_params=self.standard_callback_dynamic_params,
+                    litellm_logging_obj=self,
+                    tools=tools,
+                    prompt_label=prompt_label,
+                    prompt_version=prompt_version,
+                )
+
         if custom_logger:
             breakpoints_before: Final = AnthropicCacheControlHook.count_request_cache_breakpoints(messages)
             (
@@ -988,6 +1005,19 @@ class Logging(LiteLLMLoggingBaseClass):
                 )
         self.messages = messages
         return model, messages, non_default_params
+
+    def _get_vector_store_pre_call_hook(self) -> CustomLogger | None:
+        if litellm.vector_store_registry is None:
+            return None
+
+        vector_store_custom_logger: Final = _init_custom_logger_compatible_class(
+            logging_integration="vector_store_pre_call_hook",
+            internal_usage_cache=None,
+            llm_router=None,
+        )
+        if vector_store_custom_logger and vector_store_custom_logger not in litellm.callbacks:
+            litellm.logging_callback_manager.add_litellm_callback(vector_store_custom_logger)
+        return vector_store_custom_logger
 
     def _auto_detect_prompt_management_logger(
         self,
@@ -1115,15 +1145,8 @@ class Logging(LiteLLMLoggingBaseClass):
         # Vector Store / Knowledge Base hooks
         #########################################################
         if litellm.vector_store_registry is not None:
-            vector_store_custom_logger: Final = _init_custom_logger_compatible_class(
-                logging_integration="vector_store_pre_call_hook",
-                internal_usage_cache=None,
-                llm_router=None,
-            )
+            vector_store_custom_logger: Final = self._get_vector_store_pre_call_hook()
             self.model_call_details["prompt_integration"] = vector_store_custom_logger.__class__.__name__
-            # Add to global callbacks so post-call hooks are invoked
-            if vector_store_custom_logger and vector_store_custom_logger not in litellm.callbacks:
-                litellm.logging_callback_manager.add_litellm_callback(vector_store_custom_logger)
             return vector_store_custom_logger
 
         return None

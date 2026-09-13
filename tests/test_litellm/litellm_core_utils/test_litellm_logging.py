@@ -5813,6 +5813,47 @@ def test_prompt_hooks_skip_prompt_managers_when_no_prompt_id(logging_obj, tmp_pa
             )
         for hook in [cb for cb in litellm.callbacks if isinstance(cb, VectorStorePreCallHook)]:
             litellm.logging_callback_manager.remove_callback_from_list_by_object(litellm.callbacks, hook)
+
+
+@pytest.mark.asyncio
+async def test_prompt_hooks_compose_vector_store_before_anthropic_cache(logging_obj, monkeypatch):
+    from litellm.integrations.anthropic_cache_control_hook import AnthropicCacheControlHook
+
+    vector_store_hook = MagicMock()
+    vector_store_hook.async_get_chat_completion_prompt = AsyncMock(
+        return_value=(
+            "model-after-vector-store",
+            [{"role": "user", "content": "retrieved context"}],
+            {"cache_control_injection_points": [{"location": "message"}]},
+        )
+    )
+    cache_hook = AnthropicCacheControlHook()
+    cache_hook.async_get_chat_completion_prompt = AsyncMock(
+        return_value=(
+            "model-after-cache",
+            [{"role": "user", "content": "retrieved context with cache"}],
+            {"cache_control_injection_points": []},
+        )
+    )
+
+    monkeypatch.setattr(litellm, "vector_store_registry", object())
+    monkeypatch.setattr(logging_obj, "get_custom_logger_for_prompt_management", lambda **_: cache_hook)
+    monkeypatch.setattr(logging_obj, "_get_vector_store_pre_call_hook", lambda: vector_store_hook)
+
+    result = await logging_obj.async_get_chat_completion_prompt(
+        model="model",
+        messages=[{"role": "user", "content": "question"}],
+        non_default_params={"cache_control_injection_points": [{"location": "message"}]},
+        prompt_variables=None,
+    )
+
+    assert result == (
+        "model-after-cache",
+        [{"role": "user", "content": "retrieved context with cache"}],
+        {"cache_control_injection_points": []},
+    )
+    vector_store_hook.async_get_chat_completion_prompt.assert_awaited_once()
+    cache_hook.async_get_chat_completion_prompt.assert_awaited_once()
 def test_newrelic_dispatch_prefers_otel_v2_when_flag_on(monkeypatch):
     """With LITELLM_OTEL_V2 on, the "newrelic" callback builds the OTel v2
     logger (per-team credential routing); with the flag off (default) it keeps
