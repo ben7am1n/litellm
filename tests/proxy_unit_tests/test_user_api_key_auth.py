@@ -1457,6 +1457,66 @@ def test_jwt_path_enforces_the_user_model_budget_before_returning():
     )
 
 
+@pytest.mark.asyncio
+async def test_proxy_admin_jwt_preserves_user_budgets_for_centralized_checks():
+    """JWT proxy-admin authorization must not discard the database user's budgets."""
+    from fastapi import Request
+
+    from litellm.proxy import proxy_server
+    from litellm.proxy.auth import user_api_key_auth as auth_module
+    from litellm.proxy.proxy_server import user_api_key_cache
+
+    user = LiteLLM_UserTable(
+        user_id="jwt-proxy-admin",
+        user_role=LitellmUserRoles.INTERNAL_USER,
+        spend=12.0,
+        max_budget=10.0,
+        model_max_budget={"gpt-4o": {"budget_limit": 5.0, "time_period": "1mo"}},
+    )
+    auth_obj = UserAPIKeyAuth(
+        user_id=user.user_id,
+        user_role=LitellmUserRoles.PROXY_ADMIN,
+    )
+    captured: dict[str, LiteLLM_UserTable | None] = {}
+
+    async def capture_common_checks(**kwargs):
+        captured["user_object"] = kwargs["user_object"]
+
+    request = Request({"type": "http", "method": "POST", "path": "/chat/completions", "headers": []})
+
+    with (
+        patch.object(auth_module, "get_user_object", new=AsyncMock(return_value=user)),
+        patch.object(auth_module, "get_global_proxy_spend", new=AsyncMock(return_value=0.0)),
+        patch.object(auth_module, "common_checks", new=capture_common_checks),
+        patch.object(auth_module.LiteLLMProxyRequestSetup, "pre_seed_litellm_metadata_for_route"),
+        patch.object(auth_module.LiteLLMProxyRequestSetup, "apply_client_tag_policy_pre_auth"),
+        patch.object(auth_module, "resolve_and_validate_end_user_id", new=AsyncMock(return_value=None)),
+        patch.object(auth_module, "get_project_object", new=AsyncMock(return_value=None)),
+        patch.object(auth_module, "get_team_object", new=AsyncMock(return_value=None)),
+        patch.object(auth_module, "get_end_user_object", new=AsyncMock(return_value=None)),
+        patch.object(proxy_server, "general_settings", {"enable_jwt_auth": True}),
+        patch.object(proxy_server, "master_key", "master-key"),
+        patch.object(proxy_server, "llm_router", None),
+        patch.object(proxy_server, "prisma_client", MagicMock()),
+        patch.object(proxy_server, "proxy_logging_obj", MagicMock()),
+        patch.object(proxy_server, "user_api_key_cache", user_api_key_cache),
+        patch.object(proxy_server, "user_custom_auth", None),
+        patch.object(proxy_server, "litellm_proxy_admin_name", "proxy-admin"),
+    ):
+        await auth_module._run_centralized_common_checks(
+            user_api_key_auth_obj=auth_obj,
+            request=request,
+            request_data={"model": "gpt-4o"},
+            route="/chat/completions",
+        )
+
+    checked_user = captured["user_object"]
+    assert checked_user is not None
+    assert checked_user.user_role == LitellmUserRoles.PROXY_ADMIN
+    assert checked_user.max_budget == user.max_budget
+    assert checked_user.model_max_budget == user.model_max_budget
+
+
 def test_every_jwt_branch_carries_the_user_model_budget():
     """
     Each JWT branch that builds or replaces `valid_token` has to put the user's
