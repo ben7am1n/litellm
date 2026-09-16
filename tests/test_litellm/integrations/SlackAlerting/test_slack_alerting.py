@@ -164,6 +164,16 @@ class TestSlackAlerting(unittest.TestCase):
         self.slack_alerting.update_values(alerting_args={"slack_alerting": "True"})
         assert self.slack_alerting.periodic_started == True
 
+    @patch("asyncio.create_task")
+    def test_update_values_does_not_duplicate_periodic_task(self, mock_create_task):
+        mock_create_task.return_value = AsyncMock()
+
+        self.slack_alerting.update_values(alerting=["slack"])
+        self.slack_alerting.update_values(alerting=["slack"])
+
+        mock_create_task.assert_called_once()
+        assert self.slack_alerting.periodic_started is True
+
     @patch("litellm.integrations.SlackAlerting.slack_alerting.datetime")
     def test_alert_type_in_formatted_message(self, mock_datetime):
         # Setup mocks
