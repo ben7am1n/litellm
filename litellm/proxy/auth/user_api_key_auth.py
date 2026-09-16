@@ -560,6 +560,8 @@ def update_valid_token_with_end_user_params(valid_token: UserAPIKeyAuth, end_use
         valid_token.end_user_tpm_limit = end_user_params["end_user_tpm_limit"]
     if end_user_params.get("end_user_rpm_limit") is not None:
         valid_token.end_user_rpm_limit = end_user_params["end_user_rpm_limit"]
+    if end_user_params.get("end_user_max_budget") is not None:
+        valid_token.end_user_max_budget = end_user_params["end_user_max_budget"]
     if end_user_params.get("allowed_model_region") is not None:
         valid_token.allowed_model_region = end_user_params["allowed_model_region"]
     if end_user_params.get("end_user_model_max_budget") is not None:
@@ -1236,6 +1238,7 @@ async def _user_api_key_auth_builder(
         pass
     route: Final[str] = get_request_route(request=request)
     valid_token: UserAPIKeyAuth | None = None
+    valid_token_from_cache = False
     custom_auth_api_key: bool = False
 
     try:
@@ -1724,6 +1727,7 @@ async def _user_api_key_auth_builder(
                 # The UI-login JWT fallback below constructs its token from a
                 # decrypted blob, not this cache, and stays unmarked.
                 if isinstance(valid_token, UserAPIKeyAuth):
+                    valid_token_from_cache = True
                     valid_token.via_virtual_key = True
             except Exception:
                 verbose_logger.debug("api key not found in cache.")
@@ -1740,6 +1744,24 @@ async def _user_api_key_auth_builder(
                 and get_secret_bool("EXPERIMENTAL_UI_LOGIN") is not False
             ):
                 valid_token = ExperimentalUIJWTToken.get_key_object_from_ui_hash_key(api_key)
+
+        # End-user identity and limits are request-scoped. A cached virtual-key
+        # object may contain the previous caller's values, so replace them
+        # before running the remaining checks and before projecting the token
+        # into the response auth object.
+        if valid_token_from_cache and valid_token is not None:
+            for field_name in (
+                "end_user_id",
+                "end_user_tpm_limit",
+                "end_user_rpm_limit",
+                "end_user_max_budget",
+                "end_user_model_max_budget",
+                "allowed_model_region",
+            ):
+                setattr(valid_token, field_name, None)
+            valid_token = update_valid_token_with_end_user_params(
+                valid_token=valid_token, end_user_params=end_user_params
+            )
 
         if (
             valid_token is not None

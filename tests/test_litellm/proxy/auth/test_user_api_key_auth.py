@@ -6248,6 +6248,91 @@ async def test_auth_does_not_rewrite_cached_key_object_back_into_cache():
             setattr(_proxy_server_mod, k, v)
 
 
+@pytest.mark.asyncio
+async def test_cached_key_uses_current_end_user_identity():
+    """A shared virtual key must not attribute a new caller to the cached caller."""
+    from fastapi import Request
+    from starlette.datastructures import URL
+
+    import litellm.proxy.proxy_server as _proxy_server_mod
+    from litellm.proxy.auth.user_api_key_auth import _user_api_key_auth_builder
+    from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+    from litellm.proxy.proxy_server import hash_token
+
+    api_key = "sk-lit-shared-end-user-cache"
+    hashed_key = hash_token(api_key)
+    key_cache = UserApiKeyCache()
+    await key_cache.async_set_cache(
+        key=hashed_key,
+        value=UserAPIKeyAuth(
+            api_key=api_key,
+            token=hashed_key,
+            end_user_id="previous-user@example.com",
+            end_user_max_budget=1.0,
+            end_user_tpm_limit=10,
+        ),
+        model_type=UserAPIKeyAuth,
+    )
+
+    proxy_logging_obj = MagicMock()
+    proxy_logging_obj.internal_usage_cache = MagicMock()
+    proxy_logging_obj.internal_usage_cache.dual_cache = AsyncMock()
+    proxy_logging_obj.post_call_failure_hook = AsyncMock(return_value=None)
+    attrs = {
+        "prisma_client": MagicMock(),
+        "user_api_key_cache": key_cache,
+        "proxy_logging_obj": proxy_logging_obj,
+        "master_key": "sk-test-master",
+        "general_settings": {"user_header_name": "X-OpenWebUI-User-Email"},
+        "llm_model_list": [],
+        "llm_router": None,
+        "open_telemetry_logger": None,
+        "model_max_budget_limiter": MagicMock(),
+        "user_custom_auth": None,
+        "jwt_handler": None,
+        "litellm_proxy_admin_name": "admin",
+    }
+    originals = {attr: getattr(_proxy_server_mod, attr, None) for attr in attrs}
+    original_validate = litellm.validate_end_user_id_in_db
+    original_default_budget = litellm.max_end_user_budget_id
+    try:
+        for attr, value in attrs.items():
+            setattr(_proxy_server_mod, attr, value)
+        litellm.validate_end_user_id_in_db = False
+        litellm.max_end_user_budget_id = None
+
+        request = Request(
+            scope={
+                "type": "http",
+                "path": "/chat/completions",
+                "headers": [(b"x-openwebui-user-email", b"current-user@example.com")],
+            }
+        )
+        request._url = URL(url="/chat/completions")
+        with patch(
+            "litellm.proxy.auth.user_api_key_auth.get_end_user_object",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await _user_api_key_auth_builder(
+                request=request,
+                api_key=f"Bearer {api_key}",
+                azure_api_key_header="",
+                anthropic_api_key_header=None,
+                google_ai_studio_api_key_header=None,
+                azure_apim_header=None,
+                request_data={"model": "gpt-4o"},
+            )
+
+        assert result.end_user_id == "current-user@example.com"
+        assert result.end_user_max_budget is None
+        assert result.end_user_tpm_limit is None
+    finally:
+        for attr, value in originals.items():
+            setattr(_proxy_server_mod, attr, value)
+        litellm.validate_end_user_id_in_db = original_validate
+        litellm.max_end_user_budget_id = original_default_budget
+
+
 class TestJWTAuthUserEmail:
     """JWT auth must populate `UserAPIKeyAuth.user_email` (LIT-4238); it feeds
     the Prometheus `user_email` label and `user_api_key_user_email` in
