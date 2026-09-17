@@ -1024,6 +1024,22 @@ class AmazonConverseConfig(BaseConfig):
                 non_default_params=non_default_params, optional_params=optional_params
             )
 
+        # Bedrock Converse applies a service-side default of 4096 when
+        # inferenceConfig.maxTokens is omitted. Use LiteLLM's model limit so
+        # requests without an explicit max_tokens are not silently truncated.
+        if "maxTokens" not in optional_params:
+            try:
+                from litellm.utils import _get_model_info_helper
+
+                max_output_tokens = _get_model_info_helper(
+                    model=model, custom_llm_provider=self.custom_llm_provider
+                ).get("max_output_tokens")
+                if isinstance(max_output_tokens, int) and max_output_tokens > 0:
+                    optional_params["maxTokens"] = max_output_tokens
+            except Exception:
+                # Unmapped models should retain Bedrock's existing behavior.
+                pass
+
         final_is_thinking_enabled: Final = self.is_thinking_enabled(optional_params)
         if final_is_thinking_enabled and "tool_choice" in optional_params:
             tool_choice_block: Final = optional_params["tool_choice"]

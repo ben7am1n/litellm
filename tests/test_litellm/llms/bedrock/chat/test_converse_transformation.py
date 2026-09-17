@@ -3957,6 +3957,20 @@ def test_thinking_with_max_completion_tokens():
     assert result["thinking"]["budget_tokens"] == 5000
 
 
+def test_converse_defaults_max_tokens_to_model_limit_when_omitted():
+    """Converse should not inherit Bedrock's 4096-token default."""
+    config = AmazonConverseConfig()
+
+    result = config.map_openai_params(
+        non_default_params={},
+        optional_params={},
+        model="us.anthropic.claude-sonnet-5",
+        drop_params=False,
+    )
+
+    assert result["maxTokens"] == 128000
+
+
 def test_drop_thinking_param_when_thinking_blocks_missing():
     """
     Test that thinking param is dropped when modify_params=True and
