@@ -407,14 +407,21 @@ class LLMCallSpanData:
         # plain ``.get`` — no repeated ``isinstance`` guards.
         raw_response: Final = payload.get("response")
         response: Final = cast(Mapping[str, object], raw_response if isinstance(raw_response, dict) else {})
-        choices_out: Final = _dicts(response.get("choices"))
+        call_type: Final = as_str(payload.get("call_type"))
+        choices_out = _dicts(response.get("choices"))
+        responses_output: Final = _dicts(response.get("output"))
+        if not choices_out and call_type in ("responses", "aresponses"):
+            status: Final = as_str(response.get("status"))
+            if capture_content:
+                choices_out = _responses_output_choices(responses_output, status)
+            finish_reasons = (status,) if status else ()
+        else:
+            finish_reasons = _finish_reasons(choices_out)
         # ``finish_reasons`` is metadata, not content, so derive it from
         # ``choices_out`` before gating. The raw message/choice bodies are only
         # retained when content capture is enabled (see ``capture_span_content``);
         # otherwise the content-bearing mappers receive empty sequences and emit
         # no prompt/response text.
-        finish_reasons: Final = _finish_reasons(choices_out)
-        call_type: Final = as_str(payload.get("call_type"))
         return cls(
             operation=resolve_operation(call_type),
             provider=resolve_provider(as_str(payload.get("custom_llm_provider"))),
@@ -679,6 +686,52 @@ def _dicts(value: object) -> tuple[Mapping[str, object], ...]:
 def _finish_reasons(choices: tuple[Mapping[str, object], ...]) -> tuple[str, ...]:
     """Non-empty ``finish_reason`` of each response choice."""
     return tuple(r for c in choices if (r := as_str(c.get("finish_reason"))))
+
+
+def _responses_output_choices(
+    output: tuple[Mapping[str, object], ...], finish_reason: str | None
+) -> tuple[Mapping[str, object], ...]:
+    """Adapt Responses API output items to the choice shape used by OTel mappers."""
+    choices: list[Mapping[str, object]] = []
+    for item in output:
+        item_type = as_str(item.get("type"))
+        message: dict[str, object]
+        if item_type == "message":
+            content = item.get("content")
+            text = (
+                "".join(
+                    part["text"]
+                    for part in content
+                    if isinstance(part, dict)
+                    and part.get("type") == "output_text"
+                    and isinstance(part.get("text"), str)
+                )
+                if isinstance(content, list)
+                else None
+            )
+            message = {"role": as_str(item.get("role")) or "assistant", "content": text or ""}
+        elif item_type == "function_call":
+            message = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": as_str(item.get("call_id")),
+                        "type": "function",
+                        "function": {
+                            "name": as_str(item.get("name")),
+                            "arguments": as_str(item.get("arguments")) or "{}",
+                        },
+                    }
+                ],
+            }
+        else:
+            continue
+        choice: dict[str, object] = {"message": message}
+        if finish_reason:
+            choice["finish_reason"] = finish_reason
+        choices.append(choice)
+    return tuple(choices)
 
 
 def _parse_error(payload: StandardLoggingPayload) -> SpanError | None:

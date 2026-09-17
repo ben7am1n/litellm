@@ -913,6 +913,50 @@ def test_content_capture_opt_in_retains_bodies():
     assert data.choices_out and data.choices_out[0]["message"]["content"] == "hi"
 
 
+def test_responses_output_is_adapted_for_v2_content_capture():
+    payload = _sample_payload(
+        call_type="responses",
+        response={
+            "id": "resp_1",
+            "model": "gpt-4o",
+            "status": "completed",
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "hello"}],
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "call_1",
+                    "name": "lookup",
+                    "arguments": '{"city":"Paris"}',
+                },
+            ],
+        },
+    )
+
+    data = LLMCallSpanData.from_standard_logging_payload(payload, capture_content=True)
+
+    assert data.finish_reasons == ("completed",)
+    assert data.choices_out[0]["message"]["content"] == "hello"
+    tool_call = data.choices_out[1]["message"]["tool_calls"][0]
+    assert tool_call["id"] == "call_1"
+    assert tool_call["function"]["name"] == "lookup"
+
+
+def test_responses_finish_reason_is_kept_when_content_capture_is_disabled():
+    payload = _sample_payload(
+        call_type="responses",
+        response={"id": "resp_1", "status": "incomplete", "output": []},
+    )
+
+    data = LLMCallSpanData.from_standard_logging_payload(payload)
+
+    assert data.finish_reasons == ("incomplete",)
+    assert data.choices_out == ()
+
+
 # --- config ----------------------------------------------------------------- #
 
 
