@@ -28,6 +28,7 @@ from litellm.types.llms.openai import (
 )
 
 _MAX_ARGUMENTS_LEN: Final = 1_000_000
+OPENAI_TOOL_CALL_ITEM_ID_MAX_LENGTH: Final = 64
 
 TOOL_CALL_ITEM_ID_PREFIX_BY_TYPE: Final = MappingProxyType({"function_call": "fc", "custom_tool_call": "ctc"})
 

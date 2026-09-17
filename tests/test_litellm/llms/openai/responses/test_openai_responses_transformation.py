@@ -253,6 +253,13 @@ class TestOpenAIResponsesAPIConfig:
                 "name": "get_weather",
                 "arguments": "{}",
             },
+            {
+                "type": "function_call",
+                "id": "fc_" + "x" * 100,
+                "call_id": "call_long",
+                "name": "get_weather",
+                "arguments": "{}",
+            },
             {"type": "message", "id": "msg_1", "role": "assistant", "content": []},
         ]
 
@@ -269,7 +276,8 @@ class TestOpenAIResponsesAPIConfig:
         assert "id" not in result["input"][3]
         assert result["input"][3]["call_id"] == "srvtoolu_01Foreign"
         assert result["input"][4]["id"] == "fc_genuine"
-        assert result["input"][5]["id"] == "msg_1"
+        assert "id" not in result["input"][5]
+        assert result["input"][6]["id"] == "msg_1"
         assert replayed_input[1]["id"] == "toolu_01Foreign"
         assert replayed_input[3]["id"] == "srvtoolu_01Foreign"
 

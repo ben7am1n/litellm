@@ -23,7 +23,10 @@ from litellm.litellm_core_utils.safe_json_loads import safe_json_loads
 from litellm.litellm_core_utils.url_utils import encode_url_path_segment
 from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
 from litellm.llms.openai.chat.gpt_5_transformation import is_gpt_reasoning_series_name
-from litellm.responses.litellm_completion_transformation.custom_tools import TOOL_CALL_ITEM_ID_PREFIX_BY_TYPE
+from litellm.responses.litellm_completion_transformation.custom_tools import (
+    OPENAI_TOOL_CALL_ITEM_ID_MAX_LENGTH,
+    TOOL_CALL_ITEM_ID_PREFIX_BY_TYPE,
+)
 from litellm.secret_managers.main import get_secret_str
 from litellm.types.llms.openai import *
 from litellm.types.responses.main import *
@@ -381,7 +384,11 @@ class OpenAIResponsesAPIConfig(BaseResponsesAPIConfig):
         item_type: Final = item.get("type")
         item_id: Final = item.get("id")
         genuine_prefix: Final = TOOL_CALL_ITEM_ID_PREFIX_BY_TYPE.get(item_type) if isinstance(item_type, str) else None
-        if genuine_prefix is None or not isinstance(item_id, str) or item_id.startswith(genuine_prefix):
+        if (
+            genuine_prefix is None
+            or not isinstance(item_id, str)
+            or (item_id.startswith(genuine_prefix) and len(item_id) <= OPENAI_TOOL_CALL_ITEM_ID_MAX_LENGTH)
+        ):
             return item
         return {key: value for key, value in item.items() if key != "id"}  # mutable-ok: outgoing JSON request item
 
