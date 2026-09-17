@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from litellm.router_strategy.adaptive_router.bandit import MIN_BETA_SHAPE
 from litellm.router_strategy.adaptive_router.update_queue import (
     AdaptiveRouterUpdateQueue,
 )
@@ -78,6 +79,16 @@ async def test_flush_state_sums_correctly(queue, mock_prisma):
     assert call.kwargs["data"]["create"]["alpha"] == 3.0
     assert call.kwargs["data"]["create"]["beta"] == 1.0
     assert call.kwargs["data"]["create"]["total_samples"] == 2
+
+
+@pytest.mark.asyncio
+async def test_flush_state_floors_one_sided_create_shapes(queue, mock_prisma):
+    await queue.add_state_delta("r1", "general", "gpt-4", 0.0, 1.0)
+    await queue.flush_state_to_db(mock_prisma)
+
+    call = mock_prisma.db.litellm_adaptiverouterstate.upsert.call_args
+    assert call.kwargs["data"]["create"]["alpha"] == MIN_BETA_SHAPE
+    assert call.kwargs["data"]["create"]["beta"] == 1.0
 
 
 @pytest.mark.asyncio

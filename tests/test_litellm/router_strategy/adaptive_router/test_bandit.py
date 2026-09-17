@@ -3,6 +3,7 @@ import random
 import pytest
 
 from litellm.router_strategy.adaptive_router.bandit import (
+    MIN_BETA_SHAPE,
     BanditCell,
     apply_delta,
     initial_cell,
@@ -73,6 +74,17 @@ def test_thompson_sample_in_range():
     for _ in range(100):
         s = thompson_sample(cell, rng=rng)
         assert 0.0 <= s <= 1.0
+
+
+def test_thompson_sample_floors_non_positive_shapes():
+    rng = random.Random(42)
+    assert 0.0 <= thompson_sample(BanditCell(alpha=0.0, beta=0.0), rng=rng) <= 1.0
+
+
+def test_apply_delta_floors_non_positive_shapes():
+    cell = apply_delta(BanditCell(alpha=0.0, beta=0.0), 0.0, 0.0)
+    assert cell.alpha == MIN_BETA_SHAPE
+    assert cell.beta == MIN_BETA_SHAPE
 
 
 def test_normalized_cost_cheapest_wins():

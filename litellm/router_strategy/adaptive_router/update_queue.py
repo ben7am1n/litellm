@@ -26,6 +26,7 @@ from litellm.repositories.table_repositories import (
     AdaptiveRouterSessionRepository,
     AdaptiveRouterStateRepository,
 )
+from litellm.router_strategy.adaptive_router.bandit import MIN_BETA_SHAPE
 
 StateKey = tuple[str, str, str]  # (router_name, request_type, model_name)
 SessionKey = tuple[str, str, str]  # (session_id, router_name, model_name)
@@ -127,8 +128,8 @@ class AdaptiveRouterUpdateQueue:
                             "router_name": router,
                             "request_type": rt,
                             "model_name": model,
-                            "alpha": payload["delta_alpha"],
-                            "beta": payload["delta_beta"],
+                            "alpha": max(payload["delta_alpha"], MIN_BETA_SHAPE),
+                            "beta": max(payload["delta_beta"], MIN_BETA_SHAPE),
                             "total_samples": int(payload["samples_added"]),
                         },
                         "update": {
