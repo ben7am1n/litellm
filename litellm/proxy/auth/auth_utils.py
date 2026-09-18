@@ -1557,6 +1557,7 @@ def get_end_user_id_from_request_body(request_body: dict, request_headers: dict 
 
 MODEL_ROUTING_HEADER_NAME: Final = "x-litellm-model"
 _MODEL_ROUTING_ROUTE_MARKERS: Final = (
+    "/chat/completions",
     "/files",
     "/batches",
     "/vector_stores",
@@ -1571,6 +1572,7 @@ _MODEL_ROUTING_HEADER_OR_QUERY_ROUTE_MARKERS: Final = (
     "/skills",
     "/evals",
 )
+_MODEL_ROUTING_QUERY_MODEL_ROUTE_MARKERS: Final = ("/chat/completions",)
 _MODEL_ROUTING_QUERY_TARGET_MODEL_ROUTE_MARKERS: Final = (
     "/files",
     "/batches",
@@ -1741,6 +1743,9 @@ def _extract_model_candidates_from_request(
     uses_header_or_query_model_sources: Final = _route_matches_any_marker(
         route=route, markers=_MODEL_ROUTING_HEADER_OR_QUERY_ROUTE_MARKERS
     )
+    uses_query_model_sources: Final = _route_matches_any_marker(
+        route=route, markers=_MODEL_ROUTING_QUERY_MODEL_ROUTE_MARKERS
+    )
     uses_query_target_model_sources: Final = _route_matches_any_marker(
         route=route, markers=_MODEL_ROUTING_QUERY_TARGET_MODEL_ROUTE_MARKERS
     )
@@ -1763,11 +1768,12 @@ def _extract_model_candidates_from_request(
         _append_model_candidates(candidates, request_data["completion"].get("model"))
 
     if uses_model_routing_sources:
-        if uses_header_or_query_model_sources:
+        if uses_header_or_query_model_sources or uses_query_model_sources:
             _append_model_candidates(
                 candidates,
                 _get_case_insensitive_mapping_value(request_query_params, "model"),
             )
+        if uses_header_or_query_model_sources:
             _append_model_candidates(
                 candidates,
                 _get_case_insensitive_mapping_value(request_headers, MODEL_ROUTING_HEADER_NAME),

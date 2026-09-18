@@ -450,6 +450,17 @@ def test_get_model_from_request_ignores_routing_header_on_standard_llm_routes():
     )
 
 
+def test_get_model_from_request_includes_chat_query_model_for_access_checks():
+    """A query model is dispatched by the chat endpoint and must be allowlist-checked."""
+    models = get_model_from_request(
+        request_data={"model": "allowed-model"},
+        route="/v1/chat/completions",
+        request_query_params={"model": "restricted-model"},
+    )
+
+    assert models == ["allowed-model", "restricted-model"]
+
+
 def test_get_model_from_request_authorizes_all_file_routing_model_sources():
     models = get_model_from_request(
         request_data={"model": "body-model"},
