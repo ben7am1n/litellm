@@ -314,7 +314,12 @@ class OllamaConfig(BaseConfig):
             response_text = response_json.get("response", "")
             content = None
             reasoning_content = None
-            if response_text is not None and isinstance(response_text, str):
+            if isinstance(response_json.get("thinking"), str):
+                # Ollama's /api/generate returns reasoning separately when
+                # thinking mode is enabled instead of embedding it in response.
+                reasoning_content = response_json["thinking"]
+                content = response_text
+            elif response_text is not None and isinstance(response_text, str):
                 reasoning_content, content = _parse_content_for_reasoning(response_text)
             else:
                 content = response_text

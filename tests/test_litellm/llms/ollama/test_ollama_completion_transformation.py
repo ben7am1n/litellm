@@ -58,6 +58,38 @@ class TestOllamaConfig:
         assert result["usage"]["completion_tokens"] == 5
         assert result["usage"]["total_tokens"] == 15
 
+    def test_transform_response_with_json_thinking_field(self):
+        """Ollama's non-streaming JSON thinking field becomes reasoning content."""
+        config = OllamaConfig()
+        raw_response = MagicMock()
+        raw_response.json.return_value = {
+            "response": "",
+            "thinking": "I should answer briefly.",
+            "prompt_eval_count": 10,
+            "eval_count": 5,
+        }
+        model_response = ModelResponse(
+            id="test_id",
+            choices=[{"message": Message(content="")}],
+        )
+        mock_encoding = MagicMock()
+        mock_encoding.encode.return_value = [1, 2, 3]
+
+        result = config.transform_response(
+            model="llama2",
+            raw_response=raw_response,
+            model_response=model_response,
+            logging_obj=MagicMock(),
+            request_data={},
+            messages=[],
+            optional_params={},
+            litellm_params={},
+            encoding=mock_encoding,
+        )
+
+        assert result.choices[0]["message"].reasoning_content == "I should answer briefly."
+        assert result.choices[0]["message"].content == ""
+
     @patch("uuid.uuid4")
     def test_transform_response_json_function_call(self, mock_uuid4):
         # Setup mock UUID
