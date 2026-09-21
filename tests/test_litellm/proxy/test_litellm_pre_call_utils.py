@@ -5133,6 +5133,25 @@ def test_clean_headers_preserves_x_api_key_when_byok_enabled():
     assert "x-litellm-api-key" not in result
 
 
+def test_clean_headers_preserves_anthropic_oauth_when_forwarding_enabled():
+    headers = Headers(
+        {
+            "authorization": "Bearer sk-ant-oat01-client-oauth-token",
+            "x-litellm-api-key": "sk-proxy-virtual-key",
+        }
+    )
+
+    result = clean_headers(
+        headers=headers,
+        litellm_key_header_name="x-litellm-api-key",
+        forward_llm_provider_auth_headers=True,
+        authenticated_with_header="authorization",
+    )
+
+    assert result.get("authorization") == "Bearer sk-ant-oat01-client-oauth-token"
+    assert "x-litellm-api-key" not in result
+
+
 def test_clean_headers_strips_x_api_key_when_byok_disabled():
     """
     Regression test: with forward_llm_provider_auth_headers=False (default),

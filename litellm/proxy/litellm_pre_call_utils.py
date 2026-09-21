@@ -1188,7 +1188,11 @@ def clean_headers(
         header_lower = header.lower()
 
         if header_lower == "authorization" and is_anthropic_oauth_key(value):
-            if authenticated_with_header is None or authenticated_with_header.lower() != "authorization":
+            if (
+                forward_llm_provider_auth_headers
+                or authenticated_with_header is None
+                or authenticated_with_header.lower() != "authorization"
+            ):
                 clean_headers[header] = value
             continue
         # Special handling for x-api-key: forward it based on authenticated_with_header
