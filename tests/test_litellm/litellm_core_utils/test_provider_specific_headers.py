@@ -146,3 +146,24 @@ class TestProviderSpecificHeaderUtils:
         """An empty list of scoped entries contributes nothing."""
         result = ProviderSpecificHeaderUtils.get_provider_specific_headers([], "anthropic")
         assert result == {}
+
+    @pytest.mark.parametrize(
+        ("api_base", "expected"),
+        [
+            ("https://api.anthropic.com/v1", {"authorization": "Bearer sk-ant-oat01-fake-token"}),
+            ("https://third-party.example/v1", {}),
+        ],
+    )
+    def test_anthropic_oauth_is_scoped_to_the_official_api_base(self, api_base, expected):
+        provider_specific_header: ProviderSpecificHeader = {
+            "custom_llm_provider": "anthropic",
+            "extra_headers": {"authorization": "Bearer sk-ant-oat01-fake-token"},
+        }
+
+        result = ProviderSpecificHeaderUtils.get_provider_specific_headers(
+            provider_specific_header,
+            "anthropic",
+            api_base=api_base,
+        )
+
+        assert result == expected
