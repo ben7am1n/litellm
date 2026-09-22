@@ -15,5 +15,5 @@ def show_banner():
         import click
 
         click.echo(f"\n{LITELLM_BANNER}\n")
-    except ImportError:
+    except (ImportError, UnicodeEncodeError):
         print("\n")  # noqa: T201
