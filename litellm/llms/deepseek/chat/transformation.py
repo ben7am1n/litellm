@@ -224,6 +224,16 @@ class DeepSeekChatConfig(OpenAIGPTConfig):
             and thinking.get("type") == "enabled"
         )
 
+    def _should_fill_reasoning_content(
+        self, model: str, messages: list[AllMessageValues], optional_params: dict
+    ) -> bool:
+        if self._thinking_mode_active(model=model, optional_params=optional_params):
+            return True
+        return supports_reasoning(model=model, custom_llm_provider="deepseek") and any(
+            message.get("role") == "assistant" and bool(message.get("tool_calls") or message.get("function_call"))
+            for message in messages
+        )
+
     @staticmethod
     def _drop_unsupported_tools(optional_params: dict) -> dict:
         """
@@ -305,13 +315,13 @@ class DeepSeekChatConfig(OpenAIGPTConfig):
         Ensures `reasoning_content` is forwarded on assistant messages for
         multi-turn thinking-mode conversations (issue #28045).
 
-        Only runs when thinking mode is actually active - guarded by both
-        supports_reasoning() (model capability) and optional_params["thinking"]
-        (user explicitly enabled it), preventing spurious injection on models
-        like deepseek-v3.2 that support thinking as opt-in but not always-on.
+        Runs when thinking mode is explicitly enabled or when a reasoning-capable
+        model is continuing an assistant tool-call message.
         """
         optional_params = self._drop_unsupported_tools(optional_params)
-        if self._thinking_mode_active(model=model, optional_params=optional_params):
+        if self._should_fill_reasoning_content(
+            model=model, messages=messages, optional_params=optional_params
+        ):
             messages = self._fill_reasoning_content(messages)
         return super().transform_request(
             model=model,
@@ -334,7 +344,9 @@ class DeepSeekChatConfig(OpenAIGPTConfig):
         fix for multi-turn thinking-mode conversations.
         """
         optional_params = self._drop_unsupported_tools(optional_params)
-        if self._thinking_mode_active(model=model, optional_params=optional_params):
+        if self._should_fill_reasoning_content(
+            model=model, messages=messages, optional_params=optional_params
+        ):
             messages = self._fill_reasoning_content(messages)
         return await super().async_transform_request(
             model=model,

@@ -109,6 +109,30 @@ def test_thinking_mode_active_bool_thinking_returns_false_without_crashing():
     assert config._thinking_mode_active(model="deepseek-reasoner", optional_params={"thinking": True}) is False
 
 
+def test_transform_request_fills_reasoning_for_tool_loop_without_thinking_param():
+    config = DeepSeekChatConfig()
+    messages = [
+        {"role": "user", "content": "Use the tool"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [_function_tool("lookup")],
+            "provider_specific_fields": {"reasoning_content": "prior reasoning"},
+        },
+        {"role": "tool", "tool_call_id": "call-1", "content": "result"},
+    ]
+
+    result = config.transform_request(
+        model="deepseek-flash",
+        messages=messages,
+        optional_params={},
+        litellm_params={},
+        headers={},
+    )
+
+    assert result["messages"][1]["reasoning_content"] == "prior reasoning"
+
+
 class TestDeepSeekVisionMultimodalContent:
     """Image content lists are forwarded only for user messages on vision models."""
 
