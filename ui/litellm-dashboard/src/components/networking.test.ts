@@ -157,6 +157,30 @@ describe("modelInfoCall", () => {
   });
 });
 
+describe("exchangeLoginCode - storeLoginToken integration", () => {
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("stores the exchanged token through the secure cookie utility", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ token: "sso-jwt" }),
+    }) as any;
+    const { storeLoginToken } = await import("@/utils/cookieUtils");
+
+    await Networking.exchangeLoginCode("one-time-code", "https://proxy.example.com");
+
+    expect(storeLoginToken).toHaveBeenCalledWith("sso-jwt");
+  });
+});
+
 describe("daily activity helpers", () => {
   const startTime = new Date("2025-02-12T00:00:00.000Z");
   const endTime = new Date("2025-02-19T00:00:00.000Z");
