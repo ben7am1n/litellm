@@ -1408,11 +1408,12 @@ class TestAnthropicThinkingSignatureSelfHeal:
         assert is_empty_unsigned_thinking_block({"type": "redacted_thinking", "data": "opaque"}) is False
         assert is_empty_unsigned_thinking_block("not a dict") is False
 
-    def test_strip_empty_content_blocks_drops_empty_thinking_blocks(self):
+    def test_strip_empty_content_blocks_drops_unsigned_empty_thinking_blocks(self):
         """LIT-6357 ingestion half: an assistant tool-loop turn carrying an
-        empty (even signed) thinking block keeps its tool_use blocks and loses
-        the poison; whitespace-only counts as empty; a non-empty thinking block
-        and redacted_thinking are untouched."""
+        unsigned empty thinking block keeps its tool_use blocks and loses the
+        poison; signature-only blocks are preserved for history replay;
+        whitespace-only counts as empty; a non-empty thinking block and
+        redacted_thinking are untouched."""
         from litellm.llms.anthropic.common_utils import (
             strip_empty_content_blocks_from_anthropic_messages,
         )
@@ -1436,7 +1437,8 @@ class TestAnthropicThinkingSignatureSelfHeal:
         ]
         out = strip_empty_content_blocks_from_anthropic_messages(msgs)
         assert len(out) == 3
-        assert [b["type"] for b in out[1]["content"]] == ["tool_use"]
+        assert [b["type"] for b in out[1]["content"]] == ["thinking", "tool_use"]
+        assert out[1]["content"][0]["signature"] == "sig_abc"
         assert [b["type"] for b in out[2]["content"]] == ["thinking", "redacted_thinking"]
         assert out[2]["content"][0]["thinking"] == "real plan"
         assert len(msgs[1]["content"]) == 2
