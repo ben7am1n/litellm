@@ -13,6 +13,8 @@ from datetime import datetime
 from typing import Final, cast
 from urllib.parse import quote
 
+import httpx
+
 import litellm
 from litellm._logging import print_verbose, verbose_logger
 from litellm.constants import DEFAULT_S3_BATCH_SIZE, DEFAULT_S3_FLUSH_INTERVAL_SECONDS
@@ -366,7 +368,12 @@ class S3Logger(CustomBatchLogger, BaseAWSLLM):
             # Make the request with retry for transient S3 errors (500/503)
             max_retries: Final = 3
             for attempt in range(max_retries):
-                response = await self.async_httpx_client.put(url, data=json_string, headers=signed_headers)
+                try:
+                    response = await self.async_httpx_client.put(url, data=json_string, headers=signed_headers)
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code not in (500, 503) or attempt == max_retries - 1:
+                        raise
+                    response = exc.response
                 if response.status_code in (500, 503) and attempt < max_retries - 1:
                     wait_time = 2**attempt  # 1s, 2s
                     verbose_logger.warning(

@@ -1,10 +1,13 @@
 import asyncio
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from litellm.integrations.s3_v2 import S3Logger
+from litellm.llms.custom_httpx.http_handler import MaskedHTTPStatusError
+from litellm.types.integrations.s3_v2 import s3BatchLoggingElement
 from litellm.types.utils import StandardLoggingPayload
 
 
@@ -24,6 +27,36 @@ class TestS3V2UnitTests:
         assert (
             "json.dumps(" not in source_code
         ), "S3 v2 should not use json.dumps directly"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status_code", [500, 503])
+    async def test_async_upload_retries_masked_transient_http_errors(self, status_code):
+        logger = S3Logger(
+            s3_bucket_name="test-bucket",
+            s3_aws_access_key_id="test-key",
+            s3_aws_secret_access_key="test-secret",
+            s3_region_name="us-east-1",
+        )
+        logger.handle_callback_failure = MagicMock()
+        element = s3BatchLoggingElement(
+            s3_object_key="2025-09-14/test-key.json",
+            payload={"test": "data"},
+            s3_object_download_filename="test-file.json",
+        )
+        request = httpx.Request("PUT", "https://test-bucket.s3.us-east-1.amazonaws.com/test-key.json")
+        transient_response = httpx.Response(status_code, request=request)
+        original_error = httpx.HTTPStatusError("transient", request=request, response=transient_response)
+        masked_error = MaskedHTTPStatusError(original_error)
+        success_response = httpx.Response(200, request=request)
+        logger.async_httpx_client = AsyncMock()
+        logger.async_httpx_client.put.side_effect = [masked_error, success_response]
+
+        with patch("litellm.integrations.s3_v2.asyncio.sleep", new=AsyncMock()) as sleep:
+            await logger.async_upload_data_to_s3(element)
+
+        assert logger.async_httpx_client.put.await_count == 2
+        sleep.assert_awaited_once_with(1)
+        assert logger.handle_callback_failure.call_count == 0
 
     @patch("asyncio.create_task")
     @patch("litellm.integrations.s3_v2.CustomBatchLogger.periodic_flush")
@@ -341,8 +374,9 @@ class TestS3V2UnitTests:
     def test_s3_v2_put_url_encodes_spaces_in_object_key(
         self, mock_periodic_flush, mock_create_task
     ):
-        import requests
         from unittest.mock import AsyncMock
+
+        import requests
 
         from litellm.types.integrations.s3_v2 import s3BatchLoggingElement
 
