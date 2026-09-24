@@ -2742,6 +2742,10 @@ class Router:
             _openai_types.ResponsesAPIStreamEvents.RESPONSE_INCOMPLETE,
             _openai_types.ResponsesAPIStreamEvents.RESPONSE_FAILED,
         )
+        _RESPONSES_OUTPUT_ITEM_EVENT_TYPES: Final = (
+            _openai_types.ResponsesAPIStreamEvents.OUTPUT_ITEM_ADDED,
+            _openai_types.ResponsesAPIStreamEvents.OUTPUT_ITEM_DONE,
+        )
 
         class FallbackResponsesStreamWrapper(BaseResponsesAPIStreamingIterator):
             """
@@ -2840,8 +2844,11 @@ class Router:
 
         async def stream_with_fallbacks():
             fallback_response = None
+            delivered_output_item = False
             try:
                 async for item in source_iterator:
+                    if getattr(item, "type", None) in _RESPONSES_OUTPUT_ITEM_EVENT_TYPES:
+                        delivered_output_item = True
                     yield item
             except MidStreamFallbackError as e:
                 partial_usage: Final = Router._extract_partial_responses_usage(source_iterator)
@@ -2860,6 +2867,10 @@ class Router:
                     # original_generic_function is preserved by the caller so
                     # the helper knows what underlying API to invoke per attempt.
                     initial_kwargs["original_function"] = self._ageneric_api_call_with_fallbacks_helper
+                    if delivered_output_item:
+                        if e.original_exception is not None:
+                            raise e.original_exception from e
+                        raise
                     if e.is_pre_first_chunk or not e.generated_content:
                         # No content generated before the error — retry with the
                         # original input. Adding a continuation prompt would

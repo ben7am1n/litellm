@@ -472,6 +472,58 @@ async def test_aresponses_fallback_uses_continuation_input_after_partial_content
 
 
 @pytest.mark.asyncio
+async def test_aresponses_fallback_does_not_replay_delivered_output_item():
+    """A tool call already sent to the client must not be replayed by fallback."""
+    from litellm.exceptions import MidStreamFallbackError
+
+    router = _make_router()
+    provider_error = RuntimeError("upstream stream failed")
+
+    class _Source:
+        completed_response = None
+
+        def __init__(self):
+            self._events = [
+                MagicMock(type=ResponsesAPIStreamEvents.OUTPUT_ITEM_ADDED),
+            ]
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if self._events:
+                return self._events.pop(0)
+            raise MidStreamFallbackError(
+                message="stream failed",
+                model="gpt-5",
+                llm_provider="openai",
+                original_exception=provider_error,
+                generated_content="",
+                is_pre_first_chunk=False,
+            )
+
+        async def aclose(self):
+            return None
+
+    source = _Source()
+    wrapped = await router._aresponses_streaming_iterator(
+        response=source,
+        initial_kwargs={"model": "primary", "input": "original question"},
+    )
+
+    with patch.object(
+        router,
+        "async_function_with_fallbacks_common_utils",
+        new=AsyncMock(),
+    ) as mock_fallback:
+        with pytest.raises(RuntimeError, match="upstream stream failed"):
+            async for _ in wrapped:
+                pass
+
+    mock_fallback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_aresponses_client_error_event_skips_fallback():
     """A 400-mapped in-stream error (raised as APIError, not MidStreamFallbackError)
     must surface to the caller without invoking the router's fallback path."""
