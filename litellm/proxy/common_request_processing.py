@@ -1190,6 +1190,12 @@ async def open_sse_before_first_byte(
     if interval is None:
         return await produce_response
 
+    # `ensure_future` copies the current context into the producer task. Create
+    # the limiter stash first so the task shares the request's mutable stash
+    # instead of creating an isolated one for the streamed call.
+    from litellm.proxy.hooks.parallel_request_limiter_v3 import get_or_create_request_stash
+
+    get_or_create_request_stash()
     produce_task: Final = asyncio.ensure_future(produce_response)
     await asyncio.wait((produce_task,), timeout=interval)
     if produce_task.done():

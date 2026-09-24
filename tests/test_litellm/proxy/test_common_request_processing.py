@@ -8366,6 +8366,29 @@ async def test_ttft_keepalive_is_a_no_op_when_the_upstream_answers_in_time():
 
 
 @pytest.mark.asyncio
+async def test_ttft_keepalive_shares_rate_limiter_stash_with_upstream_task():
+    """The producer task must keep the request's limiter stash for streamed calls."""
+    from litellm.proxy.hooks.parallel_request_limiter_v3 import _request_stash, get_or_create_request_stash
+
+    stash_token = _request_stash.set(None)
+    observed_stash = None
+    try:
+        async def slow_upstream():
+            nonlocal observed_stash
+            observed_stash = get_or_create_request_stash()
+            await asyncio.sleep(0.05)
+            return _sse_response(['data: {"shared": true}\n\n'])
+
+        response = await open_sse_before_first_byte(slow_upstream(), ping_interval_seconds=0.01)
+        assert isinstance(response, StreamingResponse)
+        await _drain(response)
+
+        assert observed_stash is get_or_create_request_stash()
+    finally:
+        _request_stash.reset(stash_token)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("interval", [None, 0, "", "abc", float("inf"), float("nan"), -1])
 async def test_ttft_keepalive_unconfigured_leaves_the_call_completely_untouched(interval):
     produced = _sse_response(['data: {"x": 1}\n\n'])
