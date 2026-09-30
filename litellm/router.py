@@ -8119,6 +8119,37 @@ class Router:
         if backend_rate:
             model_info["output_cost_per_token"] = backend_rate
 
+    @staticmethod
+    def _inherit_builtin_service_tier_pricing(
+        model_info: dict, backend_model: str, custom_llm_provider: str | None
+    ) -> None:
+        """Fill missing service-tier pricing on a custom-priced deployment.
+
+        Custom pricing is registered as a standalone model-cost entry, so a
+        deployment that overrides only the standard input/output rates loses
+        the backend model's ``flex``, ``priority``, and ``ultrafast`` rates.
+        Preserve every explicitly configured value and copy only fields that
+        are absent from the deployment entry.
+        """
+        service_tier_fields: Final = tuple(
+            field
+            for field in CustomPricingLiteLLMParams.model_fields
+            if field.endswith(("_flex", "_priority", "_ultrafast"))
+        )
+        missing_fields: Final = tuple(field for field in service_tier_fields if model_info.get(field) is None)
+        if not missing_fields:
+            return
+        try:
+            backend_info: Final = litellm.get_model_info(
+                model=backend_model, custom_llm_provider=custom_llm_provider
+            )
+        except Exception:  # noqa: BLE001  # get_model_info raises plain Exception for an unmapped backend model
+            return
+        for field in missing_fields:
+            backend_value = backend_info.get(field)
+            if backend_value is not None:
+                model_info[field] = backend_value
+
     def _create_deployment(
         self,
         deployment_info: dict,
@@ -8185,6 +8216,15 @@ class Router:
                 backend_model=deployment.litellm_params.model,
                 custom_llm_provider=deployment.litellm_params.custom_llm_provider,
             )
+            has_custom_pricing: Final = any(
+                _model_info.get(field) is not None for field in CustomPricingLiteLLMParams.model_fields
+            )
+            if has_custom_pricing:
+                Router._inherit_builtin_service_tier_pricing(
+                    model_info=_model_info,
+                    backend_model=deployment.litellm_params.model,
+                    custom_llm_provider=deployment.litellm_params.custom_llm_provider,
+                )
 
             ## REGISTER MODEL INFO IN LITELLM MODEL COST MAP
             Router._register_deployment_in_model_cost(
@@ -8926,6 +8966,15 @@ class Router:
             backend_model=deployment.litellm_params.model,
             custom_llm_provider=deployment.litellm_params.custom_llm_provider,
         )
+        has_custom_pricing: Final = any(
+            _model_info_dict.get(field) is not None for field in CustomPricingLiteLLMParams.model_fields
+        )
+        if has_custom_pricing:
+            Router._inherit_builtin_service_tier_pricing(
+                model_info=_model_info_dict,
+                backend_model=deployment.litellm_params.model,
+                custom_llm_provider=deployment.litellm_params.custom_llm_provider,
+            )
 
         # Register custom pricing in litellm.model_cost.
         # Mirrors _create_deployment() logic to ensure dynamically-added deployments
@@ -9180,6 +9229,15 @@ class Router:
             backend_model=deployment.litellm_params.model,
             custom_llm_provider=deployment.litellm_params.custom_llm_provider,
         )
+        has_custom_pricing: Final = any(
+            model_info.get(field) is not None for field in CustomPricingLiteLLMParams.model_fields
+        )
+        if has_custom_pricing:
+            Router._inherit_builtin_service_tier_pricing(
+                model_info=model_info,
+                backend_model=deployment.litellm_params.model,
+                custom_llm_provider=deployment.litellm_params.custom_llm_provider,
+            )
         return model_info
 
     @staticmethod

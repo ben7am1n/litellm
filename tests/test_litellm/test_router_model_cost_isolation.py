@@ -1541,6 +1541,33 @@ def test_inherit_builtin_tiered_output_rate_leaves_a_user_rate_alone():
     assert model_info["output_cost_per_token"] == 9e-07
 
 
+def test_inherit_builtin_service_tier_pricing_fills_only_missing_rates():
+    """Custom standard rates must not discard the backend's service-tier rates."""
+    model_info = {
+        "input_cost_per_token": 1e-06,
+        "output_cost_per_token": 2e-06,
+        "input_cost_per_token_ultrafast": None,
+        "output_cost_per_token_ultrafast": 9e-04,
+    }
+    backend_info = {
+        "input_cost_per_token_ultrafast": 6e-05,
+        "output_cost_per_token_ultrafast": 3e-04,
+        "cache_read_input_token_cost_ultrafast": 1e-05,
+    }
+
+    with patch("litellm.router.litellm.get_model_info", return_value=backend_info) as get_model_info:
+        Router._inherit_builtin_service_tier_pricing(
+            model_info=model_info,
+            backend_model="gpt-6-astra",
+            custom_llm_provider="openai",
+        )
+
+    get_model_info.assert_called_once_with(model="gpt-6-astra", custom_llm_provider="openai")
+    assert model_info["input_cost_per_token_ultrafast"] == 6e-05
+    assert model_info["output_cost_per_token_ultrafast"] == 9e-04
+    assert model_info["cache_read_input_token_cost_ultrafast"] == 1e-05
+
+
 # --- a config.yaml PTU deployment must not also bill per token ------------------
 
 _PTU_MODEL_INFO = {
