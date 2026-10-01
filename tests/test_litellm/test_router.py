@@ -2290,8 +2290,8 @@ def test_completion_streaming_iterator_fallback_on_429():
 
     with patch.object(
         router,
-        "function_with_fallbacks",
-        return_value=mock_fallback_response,
+        "async_function_with_fallbacks_common_utils",
+        new=AsyncMock(return_value=mock_fallback_response),
     ) as mock_fallback:
         result = router._completion_streaming_iterator(
             model_response=mock_response,
@@ -2299,14 +2299,14 @@ def test_completion_streaming_iterator_fallback_on_429():
             initial_kwargs=initial_kwargs,
         )
 
-        collected_chunks = list(result)
+        list(result)
 
-        assert mock_fallback.called
-        call_kwargs = mock_fallback.call_args
+        assert mock_fallback.await_count == 1
+        call_kwargs = mock_fallback.await_args.kwargs
         # Pre-first-chunk: should use original messages, no continuation prompt
-        assert call_kwargs.kwargs.get("messages") == messages
+        assert call_kwargs["kwargs"].get("messages") == messages
         # Verify original_function is _completion (sync)
-        assert call_kwargs.kwargs.get("original_function") == router._completion
+        assert call_kwargs["kwargs"].get("original_function") == router._completion
 
 
 def test_completion_streaming_iterator_preserves_hidden_params():
