@@ -588,6 +588,19 @@ def _build_model_param_to_info_mapping(model_list: list) -> dict:
     return model_param_to_info
 
 
+def _get_model_infos_for_endpoint(model_param_to_info: dict, endpoint: dict) -> list:
+    """Return the deployment info matching a health-check endpoint result."""
+    model_infos: Final = model_param_to_info.get(endpoint.get("model"), [])
+    endpoint_model_id: Final = endpoint.get("model_id")
+    if endpoint_model_id:
+        matching_model_infos: Final = [
+            model_info for model_info in model_infos if model_info.get("model_id") == endpoint_model_id
+        ]
+        if matching_model_infos:
+            return matching_model_infos
+    return model_infos
+
+
 def _aggregate_health_check_results(
     model_param_to_info: dict,
     healthy_endpoints: list,
@@ -612,7 +625,7 @@ def _aggregate_health_check_results(
     for endpoint in healthy_endpoints:
         model_param = endpoint.get("model")
         if model_param and model_param in model_param_to_info:
-            for model_info in model_param_to_info[model_param]:
+            for model_info in _get_model_infos_for_endpoint(model_param_to_info, endpoint):
                 key = (model_info["model_id"], model_info["model_name"])
                 if key not in model_results:
                     model_results[key] = {
@@ -629,7 +642,7 @@ def _aggregate_health_check_results(
         model_param = endpoint.get("model")
         error_message = endpoint.get("error")
         if model_param and model_param in model_param_to_info:
-            for model_info in model_param_to_info[model_param]:
+            for model_info in _get_model_infos_for_endpoint(model_param_to_info, endpoint):
                 key = (model_info["model_id"], model_info["model_name"])
                 if key not in model_results:
                     model_results[key] = {

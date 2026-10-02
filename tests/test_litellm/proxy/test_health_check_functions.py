@@ -229,6 +229,37 @@ def test_aggregate_health_check_results_multiple_endpoints():
     assert result[key]["unhealthy_count"] == 0
 
 
+def test_aggregate_health_check_results_matches_endpoint_model_id():
+    """Health results for shared model params stay with their deployment."""
+    model_param_to_info = {
+        "openai/qwen": [
+            {"model_name": "qwen", "model_id": "host-a"},
+            {"model_name": "qwen", "model_id": "host-b"},
+        ],
+    }
+    healthy_endpoints = [{"model": "openai/qwen", "model_id": "host-a"}]
+    unhealthy_endpoints = [{"model": "openai/qwen", "model_id": "host-b", "error": "Connection error"}]
+
+    result = _aggregate_health_check_results(
+        model_param_to_info, healthy_endpoints, unhealthy_endpoints
+    )
+
+    assert result[("host-a", "qwen")] == {
+        "model_name": "qwen",
+        "model_id": "host-a",
+        "healthy_count": 1,
+        "unhealthy_count": 0,
+        "error_message": None,
+    }
+    assert result[("host-b", "qwen")] == {
+        "model_name": "qwen",
+        "model_id": "host-b",
+        "healthy_count": 0,
+        "unhealthy_count": 1,
+        "error_message": "Connection error",
+    }
+
+
 @pytest.mark.asyncio
 async def test_save_health_check_results_if_changed_status_changed():
     """Test saving when status changes"""
