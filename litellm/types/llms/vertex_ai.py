@@ -94,6 +94,7 @@ class HttpxServerSideToolResponse(TypedDict, total=False):
 
 class HttpxPartType(TypedDict, total=False):
     text: str
+    audioTranscription: dict[str, str]
     inlineData: HttpxBlobType
     fileData: FileDataType
     functionCall: HttpxFunctionCall

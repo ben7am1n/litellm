@@ -1365,6 +1365,11 @@ class VertexGeminiConfig(VertexAIBaseConfig, BaseConfig):
                         # If parsing fails, treat as regular text
                         pass
                 _content_str += text_content
+            elif "audioTranscription" in part:
+                transcription = part["audioTranscription"]
+                transcription_text = transcription.get("text")
+                if transcription_text:
+                    _content_str += transcription_text
             elif "inlineData" in part:
                 inline_data = part.get("inlineData", {})
                 mime_type = inline_data.get("mimeType", "")

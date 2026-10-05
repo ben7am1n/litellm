@@ -23,6 +23,15 @@ from litellm.types.utils import ChoiceLogprobs, Usage
 from litellm.utils import CustomStreamWrapper
 
 
+def test_audio_transcription_part_is_mapped_to_message_content():
+    content, reasoning_content = VertexGeminiConfig().get_assistant_content_message(
+        parts=[{"audioTranscription": {"text": "transcribed audio"}}]
+    )
+
+    assert content == "transcribed audio"
+    assert reasoning_content is None
+
+
 def test_top_logprobs():
     non_default_params = {
         "top_logprobs": 2,
