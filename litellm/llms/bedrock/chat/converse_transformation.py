@@ -1915,8 +1915,10 @@ class AmazonConverseConfig(BaseConfig):
         # IMPORTANT: Only drop thinking if NO assistant messages have thinking_blocks.
         # If any message has thinking_blocks, we must keep thinking enabled, otherwise
         # Related issues: https://github.com/BerriAI/litellm/issues/14194
+        thinking: Final = optional_params.get("thinking")
         if (
-            optional_params.get("thinking") is not None
+            thinking is not None
+            and not (isinstance(thinking, Mapping) and thinking.get("type") == "adaptive")
             and messages is not None
             and last_assistant_with_tool_calls_has_no_thinking_blocks(messages)
             and not any_assistant_message_has_thinking_blocks(messages)

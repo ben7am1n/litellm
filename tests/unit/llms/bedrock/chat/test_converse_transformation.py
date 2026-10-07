@@ -611,6 +611,54 @@ def test_reasoning_effort_none_omits_thinking_for_anthropic_converse(model):
 
 
 @pytest.mark.parametrize(
+    "thinking,expected",
+    [
+        ({"type": "adaptive", "display": "summarized"}, {"type": "adaptive", "display": "summarized"}),
+        ({"type": "enabled", "budget_tokens": 1024}, None),
+    ],
+)
+def test_converse_only_drops_enabled_thinking_for_tool_history_without_thinking_blocks(
+    monkeypatch: pytest.MonkeyPatch, thinking: dict[str, object], expected: dict[str, object] | None
+) -> None:
+    config = AmazonConverseConfig()
+    monkeypatch.setattr(litellm, "modify_params", True)
+    optional_params = {
+        "thinking": thinking,
+        "tools": [
+            {
+                "type": "function",
+                "function": {"name": "add", "parameters": {"type": "object"}},
+            }
+        ],
+    }
+    messages = [
+        {"role": "user", "content": "Use the tool"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": '{"a": 2}'},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "2"},
+    ]
+
+    config.transform_request(
+        model="bedrock/converse/us.anthropic.claude-opus-4-6-v1",
+        messages=messages,
+        optional_params=optional_params,
+        litellm_params={},
+        headers={},
+    )
+
+    assert optional_params.get("thinking") == expected
+
+
+@pytest.mark.parametrize(
     "model,effort,expected_effort",
     [
         ("bedrock/converse/us.anthropic.claude-opus-4-7", "low", "low"),

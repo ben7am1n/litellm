@@ -2584,6 +2584,54 @@ def test_transform_request_injects_dummy_tool_without_tools_param():
     assert "dummy_tool" in names
 
 
+@pytest.mark.parametrize(
+    "thinking,expected",
+    [
+        ({"type": "adaptive", "display": "summarized"}, {"type": "adaptive", "display": "summarized"}),
+        ({"type": "enabled", "budget_tokens": 1024}, None),
+    ],
+)
+def test_transform_request_only_drops_enabled_thinking_for_tool_history_without_thinking_blocks(
+    monkeypatch: pytest.MonkeyPatch, thinking: dict[str, object], expected: dict[str, object] | None
+) -> None:
+    config = AnthropicConfig()
+    monkeypatch.setattr(litellm, "modify_params", True)
+    optional_params = {
+        "thinking": thinking,
+        "tools": [
+            {
+                "type": "function",
+                "function": {"name": "add", "parameters": {"type": "object"}},
+            }
+        ],
+    }
+    messages = [
+        {"role": "user", "content": "Use the tool"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": '{"a": 2}'},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "2"},
+    ]
+
+    config.transform_request(
+        model="claude-opus-4-6",
+        messages=messages,
+        optional_params=optional_params,
+        litellm_params={},
+        headers={},
+    )
+
+    assert optional_params.get("thinking") == expected
+
+
 def test_transform_request_respects_user_max_tokens():
     """
     Test that transform_request respects user-provided max_tokens
