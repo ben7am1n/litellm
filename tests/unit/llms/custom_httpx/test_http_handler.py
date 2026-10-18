@@ -658,6 +658,51 @@ def test_get_httpx_client_applies_httpx_timeout_object_without_mocking_handler()
         handler.close()
 
 
+def test_get_httpx_client_uses_global_client(monkeypatch: pytest.MonkeyPatch):
+    from litellm.caching.llm_caching_handler import LLMClientCache
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, request=request, json={"ok": True}))
+    )
+    monkeypatch.setattr(litellm, "client_session", client)
+    monkeypatch.setattr(litellm, "in_memory_llm_clients_cache", LLMClientCache())
+
+    handler = get_httpx_client(params={"ssl_verify": None})
+    try:
+        response = handler.get("https://example.test")
+        assert response.json() == {"ok": True}
+        assert handler.client is client
+    finally:
+        handler.close()
+        client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_async_httpx_client_uses_global_client(monkeypatch: pytest.MonkeyPatch):
+    from litellm.caching.llm_caching_handler import LLMClientCache
+    from litellm.llms.custom_httpx.http_handler import get_async_httpx_client
+    from litellm.types.utils import LlmProviders
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, request=request, json={"ok": True})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    monkeypatch.setattr(litellm, "aclient_session", client)
+    monkeypatch.setattr(litellm, "in_memory_llm_clients_cache", LLMClientCache())
+
+    handler = get_async_httpx_client(
+        llm_provider=LlmProviders.ANTHROPIC,
+        params={"ssl_verify": None},
+    )
+    try:
+        response = await handler.get("https://example.test")
+        assert response.json() == {"ok": True}
+        assert handler.client is client
+    finally:
+        await handler.close()
+        await client.aclose()
+
+
 def test_sync_get_forwards_per_request_timeout():
     """HTTPHandler.get(timeout=...) must apply the timeout to that request,
     overriding the client default rather than silently ignoring it."""
