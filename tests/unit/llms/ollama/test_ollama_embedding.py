@@ -35,7 +35,6 @@ def test_ollama_embeddings(mock_response_data, mock_embedding_response, mock_enc
         patch("litellm.module_level_client.post") as mock_post,
         patch("litellm.OllamaConfig.get_config", return_value={"truncate": 512}),
     ):
-
         mock_response = MagicMock()
         mock_response.json.return_value = mock_response_data
         mock_post.return_value = mock_response
@@ -57,19 +56,14 @@ def test_ollama_embeddings(mock_response_data, mock_embedding_response, mock_enc
 
 
 @pytest.mark.asyncio
-async def test_ollama_aembeddings(
-    mock_response_data, mock_embedding_response, mock_encoding
-):
+async def test_ollama_aembeddings(mock_response_data, mock_embedding_response, mock_encoding):
     mock_response = AsyncMock()
     # Make json() a regular synchronous method, not async
     mock_response.json = MagicMock(return_value=mock_response_data)
     with (
-        patch(
-            "litellm.module_level_aclient.post", return_value=mock_response
-        ) as mock_post,
+        patch("litellm.module_level_aclient.post", return_value=mock_response),
         patch("litellm.OllamaConfig.get_config", return_value={"truncate": 512}),
     ):
-
         response = await ollama_aembeddings(
             api_base="http://localhost:11434",
             model="test-model",
@@ -96,7 +90,6 @@ def test_prompt_eval_fallback_when_missing(mock_embedding_response, mock_encodin
         patch("litellm.module_level_client.post") as mock_post,
         patch("litellm.OllamaConfig.get_config", return_value={}),
     ):
-
         mock_response = MagicMock()
         mock_response.json.return_value = response_data
         mock_post.return_value = mock_response
@@ -132,7 +125,41 @@ def test_ollama_embeddings_ignore_a_trailing_slash_on_api_base(api_base: str) ->
         return_value=httpx.Response(200, json={"embeddings": [[0.1, 0.2], [0.3, 0.4]], "prompt_eval_count": 2})
     )
 
-    response: Final = litellm.embedding(model="ollama/all-minilm", api_base=api_base, input=["hello", "world"])
+    response: Final = litellm.embedding(
+        model="ollama/all-minilm",
+        api_base=api_base,
+        input=["hello", "world"],
+        api_key="test-key",
+        extra_headers={"X-Test": "test-value"},
+        timeout=5,
+    )
 
     assert route.called
+    assert route.calls[0].request.headers["Authorization"] == "Bearer test-key"
+    assert route.calls[0].request.headers["X-Test"] == "test-value"
+    assert route.calls[0].request.extensions["timeout"]["read"] == 5.0
     assert [item["embedding"] for item in response.data] == [[0.1, 0.2], [0.3, 0.4]]
+
+
+@pytest.mark.asyncio
+async def test_ollama_aembedding_forwards_request_options() -> None:
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"embeddings": [[0.1, 0.2]], "prompt_eval_count": 1}
+    mock_post = AsyncMock(return_value=mock_response)
+
+    with patch("litellm.module_level_aclient.post", new=mock_post):
+        response: Final = await litellm.aembedding(
+            model="ollama/all-minilm",
+            api_base="http://gateway.example.com/ollama",
+            input=["hello"],
+            api_key="test-key",
+            extra_headers={"X-Test": "test-value"},
+            timeout=5,
+        )
+
+    mock_post.assert_awaited_once()
+    request_kwargs: Final = mock_post.call_args.kwargs
+    assert request_kwargs["headers"]["Authorization"] == "Bearer test-key"
+    assert request_kwargs["headers"]["X-Test"] == "test-value"
+    assert request_kwargs["timeout"] == 5
+    assert [item["embedding"] for item in response.data] == [[0.1, 0.2]]

@@ -7204,6 +7204,9 @@ def embedding(
             )
         elif custom_llm_provider == "ollama":
             api_base = litellm.api_base or api_base or get_secret_str("OLLAMA_API_BASE") or "http://localhost:11434"
+            api_key = api_key or litellm.ollama_key or os.environ.get("OLLAMA_API_KEY") or litellm.api_key
+            if api_key is not None and "Authorization" not in headers:
+                headers["Authorization"] = f"Bearer {api_key}"
 
             if isinstance(input, str):
                 input = [input]
@@ -7222,6 +7225,9 @@ def embedding(
                 logging_obj=logging,
                 optional_params=optional_params,
                 model_response=EmbeddingResponse(),
+                api_key=api_key,
+                extra_headers=headers,
+                timeout=timeout,
             )
         elif custom_llm_provider == "sagemaker":
             response = sagemaker_llm.embedding(

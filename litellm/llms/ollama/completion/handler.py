@@ -96,10 +96,28 @@ async def ollama_aembeddings(
     optional_params: dict,
     logging_obj: object,
     encoding: TokenEncoder | None,
+    api_key: str | None = None,
+    extra_headers: Mapping[str, str] | None = None,
+    timeout: float | None = None,
 ):
     data: Final = _prepare_ollama_embedding_payload(model, prompts, optional_params)
 
-    response: Final = await litellm.module_level_aclient.post(url=_ollama_embed_url(api_base), json=data)
+    headers: Final = {
+        **(extra_headers or {}),
+        **(
+            {"Authorization": f"Bearer {api_key}"}
+            if api_key is not None and "Authorization" not in (extra_headers or {})
+            else {}
+        ),
+    }
+    if timeout is None:
+        response: Final = await litellm.module_level_aclient.post(
+            url=_ollama_embed_url(api_base), json=data, headers=headers
+        )
+    else:
+        response: Final = await litellm.module_level_aclient.post(
+            url=_ollama_embed_url(api_base), json=data, headers=headers, timeout=timeout
+        )
     response_json: Final[OllamaEmbeddingResponse] = response.json()
 
     return _process_ollama_embedding_response(
@@ -120,10 +138,26 @@ def ollama_embeddings(
     model_response: EmbeddingResponse,
     logging_obj: object,
     encoding: TokenEncoder | None = None,
+    api_key: str | None = None,
+    extra_headers: Mapping[str, str] | None = None,
+    timeout: float | None = None,
 ):
     data: Final = _prepare_ollama_embedding_payload(model, prompts, optional_params)
 
-    response: Final = litellm.module_level_client.post(url=_ollama_embed_url(api_base), json=data)
+    headers: Final = {
+        **(extra_headers or {}),
+        **(
+            {"Authorization": f"Bearer {api_key}"}
+            if api_key is not None and "Authorization" not in (extra_headers or {})
+            else {}
+        ),
+    }
+    if timeout is None:
+        response: Final = litellm.module_level_client.post(url=_ollama_embed_url(api_base), json=data, headers=headers)
+    else:
+        response: Final = litellm.module_level_client.post(
+            url=_ollama_embed_url(api_base), json=data, headers=headers, timeout=timeout
+        )
     response_json: Final[OllamaEmbeddingResponse] = response.json()
 
     return _process_ollama_embedding_response(
