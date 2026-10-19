@@ -305,7 +305,7 @@ def get_image_dimensions(
 
 def calculate_img_tokens(
     data,
-    mode: Literal["low", "high", "auto"] = "auto",
+    mode: Literal["low", "high", "auto", "original"] = "auto",
     base_tokens: int = 85,  # openai default - https://openai.com/pricing
     use_default_image_token_count: bool = False,
 ):
@@ -314,7 +314,7 @@ def calculate_img_tokens(
 
     Args:
         data (str): The URL or base64 encoded string of the image.
-        mode (Literal["low", "high", "auto"]): The mode to use for calculating the number of tokens.
+        mode (Literal["low", "high", "auto", "original"]): The mode to use for calculating the number of tokens.
         base_tokens (int): The base number of tokens for an image.
         use_default_image_token_count (bool): When True, will NOT make a GET request to the image URL and instead return the default image dimensions.
 
@@ -326,12 +326,13 @@ def calculate_img_tokens(
         return DEFAULT_IMAGE_TOKEN_COUNT
     if mode == "low" or mode == "auto":
         return base_tokens
-    elif mode == "high":
-        # Run the async function using the helper
+    elif mode == "high" or mode == "original":
         width, height = get_image_dimensions(
             data=data,
         )
-        resized_width, resized_height = resize_image_high_res(width=width, height=height)
+        resized_width, resized_height = (
+            resize_image_high_res(width=width, height=height) if mode == "high" else (width, height)
+        )
         tiles_needed_high_res = calculate_tiles_needed(resized_width=resized_width, resized_height=resized_height)
         tile_tokens: Final = (base_tokens * 2) * tiles_needed_high_res
         total_tokens: Final = base_tokens + tile_tokens
@@ -748,8 +749,8 @@ def _count_image_tokens(
     """
     if isinstance(image_url, dict):
         detail: Final = image_url.get("detail", "auto")
-        if detail not in ["low", "high", "auto"]:
-            raise ValueError(f"Invalid detail value: {detail}. Expected 'low', 'high', or 'auto'.")
+        if detail not in ["low", "high", "auto", "original"]:
+            raise ValueError(f"Invalid detail value: {detail}. Expected 'low', 'high', 'auto', or 'original'.")
         url: Final = image_url.get("url")
         if not url:
             raise ValueError("Missing required key 'url' in image_url dict.")

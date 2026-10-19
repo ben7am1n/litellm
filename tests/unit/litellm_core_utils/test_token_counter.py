@@ -34,6 +34,7 @@ from litellm.litellm_core_utils.token_counter import (
     _get_exact_count_function,
     _get_extrapolating_count_function,
     _get_tiktoken_count_function,
+    calculate_tiles_needed,
     calculate_img_tokens,
     high_detail_image_token_upper_bound,
     offload_token_count,
@@ -1633,6 +1634,23 @@ def test_high_detail_image_token_upper_bound_covers_every_image_size(width: int,
 def test_high_detail_image_token_upper_bound_is_reached_by_the_largest_high_res_image() -> None:
     assert calculate_img_tokens(_png_data_url(2000, 768), mode="high") == high_detail_image_token_upper_bound()
     assert calculate_img_tokens(_png_data_url(1, 1), mode="high") < high_detail_image_token_upper_bound()
+
+
+def test_original_detail_counts_the_full_image_without_rejecting_the_request() -> None:
+    image_data: Final = _png_data_url(4096, 4096)
+    original_tokens: Final = calculate_img_tokens(image_data, mode="original")
+    expected_tokens: Final = 85 + (85 * 2) * calculate_tiles_needed(4096, 4096)
+
+    assert original_tokens == expected_tokens
+    assert original_tokens > calculate_img_tokens(image_data, mode="high")
+
+    messages: Final = [
+        {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": image_data, "detail": "original"}}],
+        }
+    ]
+    assert token_counter(model="gpt-3.5-turbo", messages=messages) >= original_tokens
 
 
 HUB_SETUP_SCRIPT: Final = """
