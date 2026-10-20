@@ -20383,11 +20383,12 @@ def _retry_skip_deployment(deployment_id, host, litellm_params=None, model_info=
         (403, "rejecting", None, ("rejecting",)),
         (400, "second", ("first",), ("first", "second")),
         (400, "first", ("first",), ("first",)),
-        (429, "rejecting", None, ()),
-        (503, "rejecting", None, ()),
-        (408, "rejecting", None, ()),
+        (429, "rejecting", None, ("rejecting",)),
+        (503, "rejecting", None, ("rejecting",)),
+        (408, "rejecting", None, ("rejecting",)),
+        (500, "rejecting", None, ("rejecting",)),
         (400, None, None, ()),
-        (None, "rejecting", None, ()),
+        (None, "rejecting", None, ("rejecting",)),
         ("400", "rejecting", None, ()),
         (400, "second", 7, ("second",)),
         (400, "second", "first", ("second",)),
@@ -20476,6 +20477,44 @@ async def test_router_healthy_deployments_keep_the_last_candidate_a_retry_skippe
 
     assert sorted(deployment["model_info"]["id"] for deployment in healthy_deployments) == sorted(expected)
     assert "_retry_skipped_deployment_ids" not in request_kwargs
+
+
+@pytest.mark.asyncio
+async def test_router_retry_skip_happens_before_session_affinity():
+    from litellm.router_utils.pre_call_checks.deployment_affinity_check import DeploymentAffinityCheck
+
+    model_group = "gpt-5.6"
+    deployments = [_retry_skip_deployment("rejecting", "rejecting"), _retry_skip_deployment("sibling", "sibling")]
+    router = litellm.Router(
+        model_list=deployments,
+        model_group_affinity_config={model_group: ["session_affinity"]},
+        disable_cooldowns=True,
+    )
+    try:
+        callback = next(
+            callback
+            for callback in router.optional_callbacks or []
+            if isinstance(callback, DeploymentAffinityCheck)
+        )
+        cache_key = DeploymentAffinityCheck.get_session_affinity_cache_key(
+            model_group=model_group,
+            session_id="session-1",
+            user_key=None,
+        )
+        await callback.cache.async_set_cache(key=cache_key, value={"model_id": "rejecting"}, ttl=60)
+        request_kwargs = {
+            "metadata": {"session_id": "session-1"},
+            "_retry_skipped_deployment_ids": ("rejecting",),
+        }
+
+        healthy_deployments = await router.async_get_healthy_deployments(
+            model=model_group,
+            request_kwargs=request_kwargs,
+        )
+
+        assert [deployment["model_info"]["id"] for deployment in healthy_deployments] == ["sibling"]
+    finally:
+        router.discard()
 
 
 @pytest.mark.parametrize("client_supplied", [7, "rejecting", ["rejecting"], {"rejecting": True}, object()])

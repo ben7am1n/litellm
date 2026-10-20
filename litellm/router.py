@@ -8558,15 +8558,12 @@ class Router:
         failed_deployment_id: Final[str | None] = getattr(exception, "retry_skip_deployment_id", None) or getattr(
             exception, "failed_deployment_id", None
         )
-        status_code: Final = getattr(exception, "status_code", None)
-        if not failed_deployment_id or not isinstance(status_code, int):
-            return ()
-        if litellm.should_retry(status_code):
+        if not failed_deployment_id:
             return ()
         already_skipped_ids: Final = _as_retry_skipped_deployment_ids(already_skipped)
         skipped: Final = tuple(sorted(frozenset((*already_skipped_ids, failed_deployment_id))))
         verbose_router_logger.debug(
-            "Retry skips deployments that already answered %s to this request: %s", status_code, skipped
+            "Retry skips deployments that already answered this request: %s", skipped
         )
         return skipped
 
@@ -14489,6 +14486,16 @@ class Router:
 
         healthy_deployments = self._filter_blocked_deployments(healthy_deployments)
 
+        _retry_skipped_deployment_ids: Final = _as_retry_skipped_deployment_ids(
+            request_kwargs.pop("_retry_skipped_deployment_ids", None) if request_kwargs else None
+        )
+        healthy_deployments = (
+            litellm.utils.get_excluded_filtered_deployments(
+                healthy_deployments, excluded_deployment_ids=_retry_skipped_deployment_ids
+            )
+            or healthy_deployments
+        )
+
         healthy_deployments = await self.async_callback_filter_deployments(
             model=model,
             healthy_deployments=healthy_deployments,
@@ -14543,19 +14550,6 @@ class Router:
         healthy_deployments = litellm.utils.get_excluded_filtered_deployments(
             cast(list[dict], healthy_deployments),
             excluded_deployment_ids=_excluded_deployment_ids,
-        )
-
-        ## RETRY SKIP ## -> drop deployments that already refused this request with a
-        ## non-retryable status, unless that leaves nothing, so the caller still gets
-        ## the provider's own error instead of a no-deployments error.
-        _retry_skipped_deployment_ids: Final = _as_retry_skipped_deployment_ids(
-            request_kwargs.pop("_retry_skipped_deployment_ids", None) if request_kwargs else None
-        )
-        healthy_deployments = (
-            litellm.utils.get_excluded_filtered_deployments(
-                healthy_deployments, excluded_deployment_ids=_retry_skipped_deployment_ids
-            )
-            or healthy_deployments
         )
 
         if len(healthy_deployments) == 0:
@@ -15721,6 +15715,16 @@ class Router:
             self._filter_blocked_deployments(healthy_deployments), routing_kwargs
         )
 
+        _retry_skipped_deployment_ids: Final = _as_retry_skipped_deployment_ids(
+            request_kwargs.pop("_retry_skipped_deployment_ids", None) if request_kwargs else None
+        )
+        healthy_deployments = (
+            litellm.utils.get_excluded_filtered_deployments(
+                healthy_deployments, excluded_deployment_ids=_retry_skipped_deployment_ids
+            )
+            or healthy_deployments
+        )
+
         # filter pre-call checks
         if self.enable_pre_call_checks and (messages is not None or input is not None):
             healthy_deployments = self._pre_call_checks(
@@ -15745,17 +15749,6 @@ class Router:
         healthy_deployments = litellm.utils.get_excluded_filtered_deployments(
             healthy_deployments,
             excluded_deployment_ids=_excluded_deployment_ids,
-        )
-
-        ## RETRY SKIP ## -> see async counterpart in async_get_healthy_deployments.
-        _retry_skipped_deployment_ids: Final = _as_retry_skipped_deployment_ids(
-            request_kwargs.pop("_retry_skipped_deployment_ids", None) if request_kwargs else None
-        )
-        healthy_deployments = (
-            litellm.utils.get_excluded_filtered_deployments(
-                healthy_deployments, excluded_deployment_ids=_retry_skipped_deployment_ids
-            )
-            or healthy_deployments
         )
 
         if len(healthy_deployments) == 0:
