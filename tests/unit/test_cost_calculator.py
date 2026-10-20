@@ -493,6 +493,24 @@ def test_cost_calculator_with_response_cost_in_additional_headers():
     assert result == 1000
 
 
+def test_response_cost_calculator_uses_openai_provider_reported_cost() -> None:
+    response = ModelResponse(
+        model="omni-model",
+        usage=Usage(prompt_tokens=100, completion_tokens=20, total_tokens=120, cost=0.037),
+    )
+
+    result = response_cost_calculator(
+        response_object=response,
+        model="omni-model",
+        custom_llm_provider="openai",
+        call_type="acompletion",
+        optional_params={},
+        custom_pricing=True,
+    )
+
+    assert result == pytest.approx(0.037)
+
+
 @pytest.mark.parametrize(
     ("input_cost_per_token", "output_cost_per_token", "expected_cost"),
     ((0.0, 0.0, 0.0), (0.001, 0.002, 10 * 0.001 + 253 * 0.002)),

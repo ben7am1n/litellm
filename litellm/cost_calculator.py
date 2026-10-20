@@ -2252,6 +2252,12 @@ def response_cost_calculator(
                     if provider_response_cost is not None and not custom_pricing:
                         return provider_response_cost
 
+            if custom_llm_provider == LlmProviders.OPENAI.value:
+                usage: Final = get_usage_object(completion_response=response_object)
+                provider_reported_cost: Final = getattr(usage, "cost", None)
+                if isinstance(provider_reported_cost, (int, float)) and not isinstance(provider_reported_cost, bool):
+                    return float(provider_reported_cost)
+
             response_cost = completion_cost(
                 completion_response=response_object,
                 model=model,
