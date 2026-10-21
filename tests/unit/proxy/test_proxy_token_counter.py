@@ -1542,6 +1542,54 @@ async def test_count_tokens_without_a_count_api_counts_a_non_string_tool_result_
 
 
 @pytest.mark.asyncio
+async def test_count_tokens_without_a_count_api_applies_anthropic_tool_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool: Final = {
+        "name": "get_weather",
+        "description": "Get the weather for a city",
+        "input_schema": {"type": "object", "properties": {"city": {"type": "string"}}},
+    }
+    base: Final = await _count_on_a_model_without_a_count_api(
+        monkeypatch,
+        {"model": "mistral-tool-result", "messages": [{"role": "user", "content": "Use a tool"}]},
+    )
+    changed: Final = await _count_on_a_model_without_a_count_api(
+        monkeypatch,
+        {
+            "model": "mistral-tool-result",
+            "messages": [
+                {"role": "user", "content": "Use a tool"},
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "tool_addition",
+                            "tool": {"type": "tool_definition", "definition": tool},
+                        }
+                    ],
+                },
+            ],
+        },
+    )
+    removed: Final = await _count_on_a_model_without_a_count_api(
+        monkeypatch,
+        {
+            "model": "mistral-tool-result",
+            "tools": [tool],
+            "messages": [
+                {"role": "user", "content": "Use a tool"},
+                {"role": "system", "content": [{"type": "tool_removal", "tool_name": "get_weather"}]},
+            ],
+        },
+    )
+
+    assert isinstance(base, dict) and isinstance(changed, dict) and isinstance(removed, dict)
+    assert changed["input_tokens"] > base["input_tokens"]
+    assert removed["input_tokens"] == base["input_tokens"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("body_drop_params", "expected_status"), (({}, None), ({"drop_params": False}, 400)))
 async def test_count_tokens_honors_router_default_drop_params_unless_the_body_overrides_it(
     monkeypatch: pytest.MonkeyPatch, body_drop_params: dict[str, JsonValue], expected_status: int | None

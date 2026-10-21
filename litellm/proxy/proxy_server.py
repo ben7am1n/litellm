@@ -373,6 +373,7 @@ from litellm.litellm_core_utils.sensitive_data_masker import (
     mask_sensitive_keys,
 )
 from litellm.llms.anthropic.pass_through.convertible_blocks import (
+    apply_anthropic_tool_changes,
     deployment_drops_params,
     drop_non_string_tool_result_texts,
     malformed_tool_result_count_error,
@@ -15357,15 +15358,23 @@ async def count_request_tokens(
         )
     system_message: Final = _system_message(system)
     prompt_turn: Final = prompt_only and not (system_message is None and not tools)
+    local_messages: Final = (
+        apply_anthropic_tool_changes(request_messages, tools)
+        if messages_format == "anthropic"
+        else (request_messages, tools)
+    )
+    local_counted_messages, local_counted_tools = local_messages
     typed_messages: Final = cast(  # cast-ok: request messages are raw chat-shaped dicts that token_counter normalizes
         Sequence[AllMessageValues] | None,
-        [{"role": "user", "content": prompt}] if prompt_turn else (None if prompt_only else request_messages),
+        [{"role": "user", "content": prompt}]
+        if prompt_turn
+        else (None if prompt_only else local_counted_messages),
     )
     counted_messages: Final = (
         typed_messages if typed_messages is None or system_message is None else (system_message, *typed_messages)
     )
     counted_tools: Final = cast(  # cast-ok: raw OpenAI or Anthropic tool dicts, both of which token_counter formats
-        list[ChatCompletionToolParam] | None, tools if counted_messages is not None else None
+        list[ChatCompletionToolParam] | None, local_counted_tools if counted_messages is not None else None
     )
     framing: Final = settings.framing if counted_messages is not None and settings.framing is not None else 0
     kimi_k3_messages: Final = counted_messages if settings.tokenizer == "kimi_k3" else None

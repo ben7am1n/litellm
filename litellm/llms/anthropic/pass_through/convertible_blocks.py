@@ -1,7 +1,7 @@
 import json
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from functools import partial
+from functools import partial, reduce
 from itertools import chain, groupby
 from operator import itemgetter
 from types import MappingProxyType
@@ -208,6 +208,107 @@ def malformed_tool_result_count_error(
     if messages_format != "anthropic" or deployment_drops_params(deployment):
         return None
     return malformed_tool_result_text_error(messages or ())
+
+
+@dataclass(frozen=True, slots=True)
+class _ToolChangeBlockState:
+    tools: tuple[Mapping[str, object], ...]
+    blocks: tuple[object, ...]
+    changed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _ToolChangeMessageState:
+    tools: tuple[Mapping[str, object], ...]
+    messages: tuple[dict[str, object], ...]
+    changed: bool
+
+
+def _tool_change_name(value: Mapping[str, object]) -> str | None:
+    return next(
+        (candidate for key in ("name", "tool_name") if isinstance(candidate := value.get(key), str) and candidate),
+        None,
+    )
+
+
+def _tool_addition_definition(block: Mapping[str, object]) -> Mapping[str, object] | None:
+    tool: Final = block.get("tool")
+    if isinstance(tool, Mapping):
+        if tool.get("type") == "tool_definition":
+            definition: Final = tool.get("definition")
+            if isinstance(definition, Mapping):
+                return definition
+        if "input_schema" in tool or "parameters" in tool:
+            return tool
+    definition = block.get("definition")
+    return definition if isinstance(definition, Mapping) else None
+
+
+def _tool_removal_name(block: Mapping[str, object]) -> str | None:
+    direct_name: Final = _tool_change_name(block)
+    if direct_name is not None:
+        return direct_name
+    tool: Final = block.get("tool")
+    if isinstance(tool, str):
+        return tool
+    return _tool_change_name(tool) if isinstance(tool, Mapping) else None
+
+
+def _apply_tool_change_block(state: _ToolChangeBlockState, block: object) -> _ToolChangeBlockState:
+    block_map: Final = as_str_mapping(block)
+    if block_map is None or block_map.get("type") not in ("tool_addition", "tool_removal"):
+        return _ToolChangeBlockState(state.tools, (*state.blocks, block), state.changed)
+    if block_map.get("type") == "tool_addition":
+        tool: Final = _tool_addition_definition(block_map)
+        tool_name: Final = None if tool is None else _tool_change_name(tool)
+        if tool is None or tool_name is None or any(_tool_change_name(existing) == tool_name for existing in state.tools):
+            return _ToolChangeBlockState(state.tools, state.blocks, True)
+        return _ToolChangeBlockState((*state.tools, tool), state.blocks, True)
+    tool_name = _tool_removal_name(block_map)
+    remaining_tools: Final = (
+        state.tools
+        if tool_name is None
+        else tuple(existing for existing in state.tools if _tool_change_name(existing) != tool_name)
+    )
+    return _ToolChangeBlockState(remaining_tools, state.blocks, True)
+
+
+def _apply_anthropic_tool_change_message(
+    state: _ToolChangeMessageState, message: dict[str, object]
+) -> _ToolChangeMessageState:
+    if message.get("role") != "system" or not isinstance(message.get("content"), list):
+        return _ToolChangeMessageState(state.tools, (*state.messages, message), state.changed)
+    blocks: Final = tuple(message["content"])
+    block_state: Final = reduce(
+        _apply_tool_change_block,
+        blocks,
+        _ToolChangeBlockState(state.tools, (), False),
+    )
+    if not block_state.changed:
+        return _ToolChangeMessageState(state.tools, (*state.messages, message), state.changed)
+    if not block_state.blocks:
+        return _ToolChangeMessageState(block_state.tools, state.messages, True)
+    return _ToolChangeMessageState(
+        block_state.tools,
+        (*state.messages, {**message, "content": list(block_state.blocks)}),
+        True,
+    )
+
+
+def apply_anthropic_tool_changes(
+    messages: Sequence[dict[str, object]] | None,
+    tools: Sequence[Mapping[str, object]] | None,
+) -> tuple[Sequence[dict[str, object]] | None, Sequence[Mapping[str, object]] | None]:
+    if messages is None:
+        return None, tools
+    initial_tools: Final = tuple(tool for tool in (tools or ()) if isinstance(tool, Mapping))
+    result: Final = reduce(
+        _apply_anthropic_tool_change_message,
+        messages,
+        _ToolChangeMessageState(initial_tools, (), False),
+    )
+    counted_tools: Final = result.tools if result.changed or tools is not None else None
+    return result.messages, counted_tools
 
 
 def _scannable_part(part: object) -> object:
