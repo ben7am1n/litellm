@@ -10627,6 +10627,15 @@ def test_uses_opt_in_native_output_when_the_opt_in_drove_native_output(local_mod
     assert AmazonConverseConfig().uses_opt_in_native_output(model, optional_params, {"model_info": {"id": "d1"}})
 
 
+@pytest.mark.usefixtures("local_model_cost_map")
+@pytest.mark.parametrize("model", ["us.anthropic.claude-opus-5-5", "us.anthropic.claude-sonnet-5-5"])
+def test_claude_5_5_without_thinking_uses_native_output_when_forced_tools_are_unsupported(model: str) -> None:
+    mapped: Final = _converse_params(model, None, {"response_format": CAPITAL_RESPONSE_FORMAT})
+
+    assert "outputConfig" in mapped
+    assert "tools" not in mapped
+
+
 @pytest.mark.parametrize(
     ("model", "model_info", "request_params"),
     [

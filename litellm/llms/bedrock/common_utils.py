@@ -288,9 +288,21 @@ def bedrock_chat_uses_native_structured_output(
     custom_llm_provider: str = "bedrock",
     model_info: Mapping[str, object] | None = None,
 ) -> bool:
-    return _bedrock_model_supports(model, "supports_native_structured_output", custom_llm_provider) or (
-        thinking_requested and _bedrock_native_output_opt_in(model, custom_llm_provider, model_info)
+    native_output_supported: Final = _bedrock_model_supports(
+        model, "supports_native_structured_output", custom_llm_provider
     )
+    if native_output_supported:
+        return True
+
+    native_output_opt_in: Final = _bedrock_native_output_opt_in(
+        model, custom_llm_provider, model_info
+    )
+    if thinking_requested:
+        return native_output_opt_in
+
+    from litellm.llms.anthropic.common_utils import AnthropicModelInfo
+
+    return native_output_opt_in and AnthropicModelInfo.forced_tool_use_unsupported(model)
 
 
 def bedrock_native_output_is_opt_in(
